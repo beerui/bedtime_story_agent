@@ -219,7 +219,7 @@ def generate_soothing_noise(output_path, duration=60):
 # 模块：双引擎智能配音与字幕 (防吃异常修复版)
 # ==========================================
 async def _synthesize_cosyvoice(text, output_path):
-    url = "https://dashscope.aliyuncs.com/api/v1/services/audio/text-to-speech/text-to-speech"
+    url = "https://dashscope-intl.aliyuncs.com/api/v1/services/audio/text-to-speech/text-to-speech"
     headers = {
         "Authorization": f"Bearer {API_CONFIG['cosyvoice_api_key']}", 
         "Content-Type": "application/json"
