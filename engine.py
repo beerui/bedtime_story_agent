@@ -216,25 +216,44 @@ def generate_soothing_noise(output_path, duration=60):
     return output_path
 
 # ==========================================
-# 模块：双引擎智能配音与字幕
+# 模块：双引擎智能配音与字幕 (防吃异常修复版)
 # ==========================================
 async def _synthesize_cosyvoice(text, output_path):
     url = "https://dashscope.aliyuncs.com/api/v1/services/audio/text-to-speech/text-to-speech"
-    # === 修复：删除了导致报错的 X-DashScope-WorkSpace ===
-    headers = {"Authorization": f"Bearer {API_CONFIG['cosyvoice_api_key']}", "Content-Type": "application/json"}
-    payload = {"model": "cosyvoice-v1", "input": {"text": text}, "parameters": {"voice": API_CONFIG["tts_voice"], "speech_rate": -15}}
+    headers = {
+        "Authorization": f"Bearer {API_CONFIG['cosyvoice_api_key']}", 
+        "Content-Type": "application/json"
+    }
+    
+    # 核心修复：阿里接口的参数名叫 speed，1.0 是原速，0.8 表示减速 20% (适合助眠)
+    payload = {
+        "model": "cosyvoice-v1", 
+        "input": {"text": text}, 
+        "parameters": {
+            "voice": API_CONFIG["tts_voice"], 
+            "speed": 0.8 
+        }
+    }
+    
     response = await asyncio.to_thread(requests.post, url, headers=headers, json=payload, timeout=30)
-    if response.status_code == 200:
-        with open(output_path, "wb") as f: f.write(response.content)
+    
+    # 修复：严格校验返回类型，防止把阿里的 JSON 报错信息当成 MP3 写入文件
+    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("audio"):
+        with open(output_path, "wb") as f: 
+            f.write(response.content)
     else:
-        raise Exception(f"CosyVoice API Error: {response.text}")
+        raise Exception(f"阿里云接口拒绝请求: {response.text}")
 
 async def generate_audio(text, output_dir):
     voice_path = os.path.join(output_dir, "voice.mp3")
     console.print("\n[bold cyan][音频车间] 正在进行精准分段录制...[/bold cyan]")
     
     use_pro_voice = bool(API_CONFIG.get("cosyvoice_api_key", "").strip())
-    
+    if use_pro_voice:
+        console.print("  [bold green]🌟 检测到 CosyVoice 密钥，已激活[真人级呼吸情感引擎][/bold green]")
+    else:
+        console.print("  [dim]⚡ 未配置 CosyVoice 密钥，自动降级为微软 Edge-TTS[/dim]")
+
     parts = re.split(r'(\[.*?\]|【.*?】|\(.*?\)|（.*?）)', text)
     audio_clips, temp_files, subtitles_info = [], [], []
     current_time = 0.0
@@ -254,15 +273,19 @@ async def generate_audio(text, output_dir):
                 clean_text = sub_sentence.replace('**', '').replace('*', '').replace('---', '').strip()
                 if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean_text): continue
                 
+                console.print(f"  🎙️ 录音配对: {clean_text[:15]}...")
                 temp_path = os.path.join(output_dir, f"temp_voice_{i}_{j}.mp3")
                 
                 try:
-                    if use_pro_voice: await _synthesize_cosyvoice(clean_text, temp_path)
+                    if use_pro_voice: 
+                        await _synthesize_cosyvoice(clean_text, temp_path)
                     else:
                         edge_clean_text = re.sub(r'\[.*?\]|【.*?】', '', clean_text)
                         if not edge_clean_text.strip(): continue
                         await edge_tts.Communicate(edge_clean_text, fallback_voice, rate="-10%", pitch="-2Hz").save(temp_path)
                 except Exception as e:
+                    # 恢复监控报错：任何网络或接口错误都会变成显眼的红字！
+                    console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
                     continue
                 
                 try:
@@ -273,13 +296,19 @@ async def generate_audio(text, output_dir):
                     subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
                     current_time += clip.duration
                 except Exception as e:
+                    console.print(f"[red]  ❌ 读取音频失败: {e}[/red]")
                     continue
         else:
+            console.print(f"  ⏸️ 剧情留白: '{part}' (插入 4 秒静音)")
             sr = 44100
             audio_clips.append(AudioArrayClip(np.zeros((int(sr * 4), 2)), fps=sr))
             current_time += 4.0
 
-    if not audio_clips: return None, []
+    if not audio_clips:
+        console.print("[bold red]❌ 严重错误：剧本中没有提取到任何有效语音！[/bold red]")
+        return None, []
+        
+    console.print("  -> 正在拼接音频时间轴...")
     final_audio = concatenate_audioclips(audio_clips)
     final_audio.write_audiofile(voice_path, logger=None)
     for c in audio_clips: c.close()
