@@ -1,6 +1,6 @@
 """真实 CosyVoice 语音合成（默认跳过，不 mock）。
 
-在项目根目录执行（需已安装 dashscope、edge_tts、moviepy 等，且 config.py 中配置了 cosyvoice_api_key）::
+在项目根目录执行（需已安装 dashscope、edge_tts、moviepy 等，且 .env 中配置了 COSYVOICE_API_KEY）::
 
     Windows CMD:
         set RUN_COSYVOICE_LIVE=1
@@ -47,7 +47,7 @@ class TestCosyVoiceLive(unittest.IsolatedAsyncioTestCase):
         from config import API_CONFIG
 
         if not (API_CONFIG.get("cosyvoice_api_key") or "").strip():
-            self.skipTest("config.API_CONFIG 中 cosyvoice_api_key 为空")
+            self.skipTest(".env 中 COSYVOICE_API_KEY 为空")
 
         sample = (
             "夜深了，列车轻轻摇晃。闭上眼睛，让身体跟着节奏慢慢放松。"

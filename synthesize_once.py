@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""用 CosyVoice 将文字合成为本地 mp3（读 config.py 中的 cosyvoice_api_key）。
+"""用 CosyVoice 将文字合成为本地 mp3（读 .env 中的 COSYVOICE_API_KEY）。
 
 用法::
 
@@ -47,7 +47,7 @@ def main() -> None:
     from config import API_CONFIG
 
     if not (API_CONFIG.get("cosyvoice_api_key") or "").strip():
-        print("错误: 请在 config.py 的 API_CONFIG 中配置 cosyvoice_api_key", file=sys.stderr)
+        print("错误: 请在 .env 中配置 COSYVOICE_API_KEY", file=sys.stderr)
         sys.exit(1)
 
     from engine import _synthesize_cosyvoice

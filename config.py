@@ -1,33 +1,57 @@
 # config.py
+import os
+
+
+def _load_local_env(env_path=".env"):
+    """轻量加载 .env，避免引入额外依赖。"""
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if (value.startswith('"') and value.endswith('"')) or (
+                value.startswith("'") and value.endswith("'")
+            ):
+                value = value[1:-1]
+            os.environ.setdefault(key, value)
+
+
+_load_local_env()
 
 # ==========================================
-# 1. API 接口与模型配置 (根据截图更新)
+# 1. API 接口与模型配置（敏感信息全部从 .env 读取）
 # ==========================================
 API_CONFIG = {
     # 你的代理接口配置 (用于生成故事文本)
-    "proxy_api_key": "sk-2pLECgqYxdzXnPXL1iCKwkoT2PR5SDTCBlzto19eqHfq7DOe", # 替换为你配置的 PROXY_API_KEY
-    "proxy_base_url": "https://open-ai-anthropic-api--motou2021.replit.app/v1",
-    "text_model": "claude-haiku-4-5",     # 截图中的模型，也可以换成 gpt-5-mini
-
-    # 官方 OpenAI 配置 (用于生成图像，如果代理也支持画图，可以将上面的 key 填入这里)
-    "image_api_key": "sk-2pLECgqYxdzXnPXL1iCKwkoT2PR5SDTCBlzto19eqHfq7DOe",
-
-    # 新增：顶级情绪语音大模型配置 (阿里云 DashScope - CosyVoice)
-    # 如果留空，系统将自动降级使用免费的微软 Edge-TTS
-    "cosyvoice_api_key": "sk-5596d7a54f4f48e1a12cc7a7d176516a", # <-- 在这里填入阿里云的 API Key (例如: sk-xxxxxx)
-    
-    # 推荐的治愈系声音：
-    # "longxiaochun" (龙小淳 - 极度温柔治愈的女声)
-    # "longfeiye" (龙飞夜 - 沉稳磁性的深夜男声)
-    "tts_voice": "longyue_v3",
+    "proxy_api_key": os.getenv("PROXY_API_KEY", "").strip(),
+    "proxy_base_url": os.getenv(
+        "PROXY_BASE_URL", "https://open-ai-anthropic-api--motou2021.replit.app/v1"
+    ).strip(),
+    "text_model": os.getenv("TEXT_MODEL", "claude-haiku-4-5").strip(),
+    # 官方 OpenAI 配置 (用于生成图像)
+    "image_api_key": os.getenv("IMAGE_API_KEY", "").strip(),
+    # 阿里云 DashScope - CosyVoice
+    "cosyvoice_api_key": os.getenv("COSYVOICE_API_KEY", "").strip(),
+    # 推荐音色：longxiaochun / longfeiye / longyue_v3 等
+    "tts_voice": os.getenv("TTS_VOICE", "longyue_v3").strip(),
     # [环境音：…] 在音轨上插入的静音秒数（后期可叠真实环境声）
-    "tts_env_silence_seconds": 4.0,
+    "tts_env_silence_seconds": float(os.getenv("TTS_ENV_SILENCE_SECONDS", "4.0")),
 }
 # 视频总时长 (分钟)
-TOTAL_VIDEO_MINUTES = 15
+TOTAL_VIDEO_MINUTES = int(os.getenv("TOTAL_VIDEO_MINUTES", "15"))
 
 # True：不调用 assemble_pro_video（不压制 Final_Video_*.mp4）；仍会生成故事、配音、配图、AI 短片素材、封面等
-SKIP_FINAL_VIDEO_RENDER = True
+SKIP_FINAL_VIDEO_RENDER = os.getenv("SKIP_FINAL_VIDEO_RENDER", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # 大模型写稿时遵守的「语音友好」标记，语义对齐 CosyVoice SSML（停顿≈<break>，留白≈长静音）
 # 文档: https://help.aliyun.com/zh/model-studio/introduction-to-cosyvoice-ssml-markup-language
