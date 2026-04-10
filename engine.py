@@ -25,7 +25,7 @@ import moviepy.video.fx.all as vfx
 from rich.console import Console
 from rich.panel import Panel
 
-from config import API_CONFIG, PROTAGONIST, THEMES
+from config import API_CONFIG, PROTAGONIST, THEMES, TTS_SCRIPT_DIRECTIVE
 import dashscope
 from dashscope.audio.tts_v2 import SpeechSynthesizer
 
@@ -152,7 +152,11 @@ async def generate_ai_video(image_path, output_path):
 # ==========================================
 def generate_custom_theme(user_idea):
     user_idea = user_idea.encode('utf-8', 'ignore').decode('utf-8')
-    prompt = f"你是一个睡眠冥想场景规划师。用户想法：【{user_idea}】。\n严格按3行格式输出：\n主题名：\n文案设定：\n画面提示词：(英文，包含 cinematic vertical view, relaxing)\n"
+    prompt = (
+        f"你是一个睡眠冥想场景规划师。用户想法：【{user_idea}】。\n\n{TTS_SCRIPT_DIRECTIVE}\n\n"
+        "「文案设定」需写成适合口播的设定，并在设定中体现会在成稿里使用的 [环境音：]、[停顿] 等节奏设计。\n"
+        "严格按3行格式输出：\n主题名：\n文案设定：\n画面提示词：(英文，包含 cinematic vertical view, relaxing)\n"
+    )
     response = text_client.chat.completions.create(model=API_CONFIG["text_model"], messages=[{"role": "user", "content": prompt}], stream=False)
     result_text = response.choices[0].message.content.strip()
     
@@ -202,9 +206,35 @@ def generate_story(theme_name, output_dir, target_words):
         with open(text_path, "r", encoding="utf-8") as f: return f.read()
 
     theme_info = THEMES[theme_name]
-    outline = text_client.chat.completions.create(model=API_CONFIG["text_model"], messages=[{"role": "user", "content": f"心理学家。主题【{theme_name}】。写「三段式心理暗示大纲」。"}], stream=False).choices[0].message.content
-    draft = text_client.chat.completions.create(model=API_CONFIG["text_model"], messages=[{"role": "user", "content": f"电台主播。大纲：\n{outline}\n要求：插入[环境音：xx]留白，以及[叹气]或[轻笑]增加呼吸感。"}], stream=False).choices[0].message.content
-    final_story = text_client.chat.completions.create(model=API_CONFIG["text_model"], messages=[{"role": "user", "content": f"严苛主编。去AI味，电影感。保留原格式。初稿：\n{draft}"}], stream=False).choices[0].message.content
+    theme_brief = theme_info.get("story_prompt", "")
+    spec = TTS_SCRIPT_DIRECTIVE
+    outline = text_client.chat.completions.create(
+        model=API_CONFIG["text_model"],
+        messages=[{"role": "user", "content": (
+            f"你是睡眠冥想心理学家。主题【{theme_name}】。\n"
+            f"主题氛围要求：{theme_brief}\n\n{spec}\n\n"
+            "请写「三段式心理暗示大纲」：起—承—合；大纲里可标注计划在何处用 [环境音：] 与 [停顿]。"
+        )}],
+        stream=False,
+    ).choices[0].message.content
+    draft = text_client.chat.completions.create(
+        model=API_CONFIG["text_model"],
+        messages=[{"role": "user", "content": (
+            f"你是深夜电台主播，声音要慢、稳、催眠感。\n{spec}\n\n"
+            f"根据大纲扩写成完整口播稿（约 {target_words} 字量级）：\n{outline}\n\n"
+            "必须实际写出 [环境音：…]、[停顿] 或 [停顿500ms]/[停顿1s] 等标记，位置要自然；禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。"
+        )}],
+        stream=False,
+    ).choices[0].message.content
+    final_story = text_client.chat.completions.create(
+        model=API_CONFIG["text_model"],
+        messages=[{"role": "user", "content": (
+            f"你是严苛主编：去掉 AI 腔与说教感，增强电影感与感官描写。\n{spec}\n\n"
+            "保留初稿中所有 [环境音：]、[停顿…] 标记，不得删除或改成自然语言描述；可微调措辞与标点。\n\n初稿：\n"
+            f"{draft}"
+        )}],
+        stream=False,
+    ).choices[0].message.content
 
     with open(text_path, "w", encoding="utf-8") as f: f.write(final_story)
     return final_story
@@ -216,6 +246,36 @@ def generate_soothing_noise(output_path, duration=60):
     clip = AudioArrayClip(np.vstack((soothing_noise, soothing_noise)).T, fps=sr)
     clip.write_audiofile(output_path, fps=sr, logger=None)
     return output_path
+
+
+def _cosyvoice_model_for_voice(voice_name: str) -> str:
+    """音色与 CosyVoice 模型须同代，否则 API 418。参见百炼文档。"""
+    vn = (voice_name or "").lower()
+    if "v2" in vn:
+        return "cosyvoice-v2"
+    if vn == "longanyang" or "_v3" in vn or vn.endswith("v3") or "v3" in vn:
+        return "cosyvoice-v3-flash"
+    return "cosyvoice-v1"
+
+
+def _silence_seconds_for_markup(part: str):
+    """解析 [环境音：…]、[停顿…]；返回静音时长（秒），非此类标记返回 None。"""
+    p = part.strip()
+    if re.match(r"^(\[环境音[^\]]*\]|【环境音[^】]*】)$", p):
+        return float(API_CONFIG.get("tts_env_silence_seconds", 4.0))
+    if p in ("[停顿]", "【停顿】"):
+        return 0.8
+    m = re.match(r"^\[停顿(\d+)ms\]$", p) or re.match(r"^【停顿(\d+)ms】$", p)
+    if m:
+        ms = int(m.group(1))
+        ms = max(50, min(10000, ms))
+        return ms / 1000.0
+    m = re.match(r"^\[停顿(\d+(?:\.\d+)?)s\]$", p) or re.match(r"^【停顿(\d+(?:\.\d+)?)s】$", p)
+    if m:
+        sec = float(m.group(1))
+        return max(0.05, min(10.0, sec))
+    return None
+
 
 # ==========================================
 # 模块：双引擎智能配音与字幕 (防吃异常修复版)
@@ -229,28 +289,25 @@ async def _synthesize_cosyvoice(text, output_path):
         
         # 获取 config 中的音色
         voice_name = API_CONFIG.get("tts_voice", "longxiaochun")
-        
-        # 智能匹配模型版本：
-        # 如果您在 config.py 中换成了 "longanyang"，这里可以自动用 V3 模型
-        model_version = "cosyvoice-v1"
-        if voice_name == "longanyang" or "v3" in voice_name:
-            model_version = "cosyvoice-v3-flash"
-        elif "v2" in voice_name:
-            model_version = "cosyvoice-v2"
+        model_version = _cosyvoice_model_for_voice(voice_name)
+        console.print(f"\n[bold cyan][音频车间] 正在进行 CosyVoice 语音合成...[/bold cyan] 模型版本: {model_version}")
 
-        # 实例化 SpeechSynthesizer，这里添加了 rate=0.8 使语速变慢以适合助眠
+        # 实例化 SpeechSynthesizer；speech_rate 控制语速（0.5–2.0，1.0 为原速），助眠略慢
         synthesizer = SpeechSynthesizer(
-            model=model_version, 
+            model=model_version,
             voice=voice_name,
-            rate=0.8  # 官方 SDK 支持 rate 参数调整语速 (1.0为原速)
+            speech_rate=0.8,
         )
         
         # 发送待合成文本
         audio = synthesizer.call(text)
-        
         if audio is None or len(audio) == 0:
-            raise Exception("调用 SDK 成功但返回的音频数据为空！")
-            
+            raise Exception(
+                "CosyVoice 未返回音频（可能音色与模型不匹配、文本含非法 SSML、或接口报错）。"
+                "参见: https://help.aliyun.com/zh/model-studio/introduction-to-cosyvoice-ssml-markup-language"
+            )
+        console.print(f"    🎙️ 合成完成: {len(audio)} bytes")
+
         # 将音频保存至本地
         with open(output_path, 'wb') as f:
             f.write(audio)
@@ -275,48 +332,52 @@ async def generate_audio(text, output_dir):
     
     for i, part in enumerate(parts):
         part = part.strip()
-        if not part: continue
-        is_sfx = bool(re.match(r'^(\[环境音.*?\]|【环境音.*?】)$', part))
-        
-        if not is_sfx:
-            sub_sentences = re.split(r'([。！？!?\n]+)', part)
-            combined_sentences = [sub_sentences[j] + sub_sentences[j+1] for j in range(0, len(sub_sentences)-1, 2) if j+1 < len(sub_sentences)]
-            if len(sub_sentences) % 2 != 0 and sub_sentences[-1]: combined_sentences.append(sub_sentences[-1])
-            
-            for j, sub_sentence in enumerate(combined_sentences):
-                clean_text = sub_sentence.replace('**', '').replace('*', '').replace('---', '').strip()
-                if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean_text): continue
-                
-                console.print(f"  🎙️ 录音配对: {clean_text[:15]}...")
-                temp_path = os.path.join(output_dir, f"temp_voice_{i}_{j}.mp3")
-                
-                try:
-                    if use_pro_voice: 
-                        await _synthesize_cosyvoice(clean_text, temp_path)
-                    else:
-                        edge_clean_text = re.sub(r'\[.*?\]|【.*?】', '', clean_text)
-                        if not edge_clean_text.strip(): continue
-                        await edge_tts.Communicate(edge_clean_text, fallback_voice, rate="-10%", pitch="-2Hz").save(temp_path)
-                except Exception as e:
-                    # 恢复监控报错：任何网络或接口错误都会变成显眼的红字！
-                    console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
-                    continue
-                
-                try:
-                    clip = AudioFileClip(temp_path)
-                    audio_clips.append(clip)
-                    temp_files.append(temp_path)
-                    sub_text_clean = re.sub(r'\[.*?\]|【.*?】', '', clean_text).strip()
-                    subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
-                    current_time += clip.duration
-                except Exception as e:
-                    console.print(f"[red]  ❌ 读取音频失败: {e}[/red]")
-                    continue
-        else:
-            console.print(f"  ⏸️ 剧情留白: '{part}' (插入 4 秒静音)")
+        if not part:
+            continue
+        silence_sec = _silence_seconds_for_markup(part)
+        if silence_sec is not None:
+            label = part if len(part) <= 48 else part[:45] + "..."
+            console.print(f"  ⏸️ 标记留白: '{label}' ({silence_sec:.2f}s)")
             sr = 44100
-            audio_clips.append(AudioArrayClip(np.zeros((int(sr * 4), 2)), fps=sr))
-            current_time += 4.0
+            audio_clips.append(AudioArrayClip(np.zeros((int(sr * silence_sec), 2)), fps=sr))
+            current_time += silence_sec
+            continue
+
+        sub_sentences = re.split(r'([。！？!?\n]+)', part)
+        combined_sentences = [sub_sentences[j] + sub_sentences[j + 1] for j in range(0, len(sub_sentences) - 1, 2) if j + 1 < len(sub_sentences)]
+        if len(sub_sentences) % 2 != 0 and sub_sentences[-1]:
+            combined_sentences.append(sub_sentences[-1])
+
+        for j, sub_sentence in enumerate(combined_sentences):
+            clean_text = sub_sentence.replace('**', '').replace('*', '').replace('---', '').strip()
+            if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean_text):
+                continue
+
+            console.print(f"  🎙️ 录音配对: {clean_text[:15]}...")
+            temp_path = os.path.join(output_dir, f"temp_voice_{i}_{j}.mp3")
+
+            try:
+                if use_pro_voice:
+                    await _synthesize_cosyvoice(clean_text, temp_path)
+                else:
+                    edge_clean_text = re.sub(r'\[.*?\]|【.*?】', '', clean_text)
+                    if not edge_clean_text.strip():
+                        continue
+                    await edge_tts.Communicate(edge_clean_text, fallback_voice, rate="-10%", pitch="-2Hz").save(temp_path)
+            except Exception as e:
+                console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
+                continue
+
+            try:
+                clip = AudioFileClip(temp_path)
+                audio_clips.append(clip)
+                temp_files.append(temp_path)
+                sub_text_clean = re.sub(r'\[.*?\]|【.*?】', '', clean_text).strip()
+                subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
+                current_time += clip.duration
+            except Exception as e:
+                console.print(f"[red]  ❌ 读取音频失败: {e}[/red]")
+                continue
 
     if not audio_clips:
         console.print("[bold red]❌ 严重错误：剧本中没有提取到任何有效语音！[/bold red]")
@@ -343,7 +404,8 @@ def generate_multi_images(theme_name, output_dir):
         if os.path.exists(output_filename):
             saved_images.append(output_filename)
             continue
-        image_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f'{theme_info['image_prompt']}, {modifier}, 4k')}?width=1024&height=1792&nologo=true&seed={i*999}"
+        pollination_prompt = f"{theme_info['image_prompt']}, {modifier}, 4k"
+        image_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(pollination_prompt)}?width=1024&height=1792&nologo=true&seed={i*999}"
         for attempt in range(4):
             try:
                 response = requests.get(image_url, timeout=60)

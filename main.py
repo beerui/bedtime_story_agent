@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel
 
-from config import THEMES
+from config import THEMES, SKIP_FINAL_VIDEO_RENDER
 import engine
 
 console = Console()
@@ -83,20 +83,38 @@ async def interactive_main():
         task_visuals, task_bgm, task_story_audio, task_cover
     )
     
-    # 最后一步：剪辑渲染包装
-    engine.assemble_pro_video(
-        image_paths=image_files, 
-        ai_video_paths=ai_video_files,
-        voice_path=voice_file, 
-        subtitles_info=subtitles_info, 
-        bgm_filename=ai_selected_bgm, 
-        total_minutes=total_minutes, 
-        theme_name=selected_theme, 
-        output_dir=output_dir
-    )
+    # 最后一步：剪辑渲染包装（config.SKIP_FINAL_VIDEO_RENDER=True 时跳过）
+    if SKIP_FINAL_VIDEO_RENDER:
+        console.print(
+            "\n[bold yellow]已跳过最终视频渲染（config.SKIP_FINAL_VIDEO_RENDER = True）。[/bold yellow]"
+            "\n[dim]输出目录内仍有：story_draft、voice.mp3、scene_*.png、封面图及 ai_video_*.mp4（若有）等素材。[/dim]"
+        )
+    else:
+        engine.assemble_pro_video(
+            image_paths=image_files,
+            ai_video_paths=ai_video_files,
+            voice_path=voice_file,
+            subtitles_info=subtitles_info,
+            bgm_filename=ai_selected_bgm,
+            total_minutes=total_minutes,
+            theme_name=selected_theme,
+            output_dir=output_dir,
+        )
 
     end_time = time.time()
-    console.print(Panel.fit(f"[bold green]🎉 全部任务圆满完成！输出文件夹已包含：\n1. 高清正片 MP4\n2. B站封面 (16:9)\n3. 抖音封面 (9:16)\n4. 小红书封面 (3:4)\n\n⏱️ 总耗时: {end_time - start_time:.2f} 秒！[/bold green]"))
+    if SKIP_FINAL_VIDEO_RENDER:
+        done_msg = (
+            "[bold green]管线任务完成（未压制正片）。输出文件夹已包含：\n"
+            "1. 故事文稿与配音\n2. 配图与（可选）AI 视频片段\n3. B站 / 抖音 / 小红书封面\n\n"
+            f"总耗时: {end_time - start_time:.2f} 秒\n"
+            "[dim]需要 Final MP4 时将 config.SKIP_FINAL_VIDEO_RENDER 改为 False。[/dim][/bold green]"
+        )
+    else:
+        done_msg = (
+            f"[bold green]全部任务圆满完成！输出文件夹已包含：\n1. 高清正片 MP4\n2. B站封面 (16:9)\n"
+            f"3. 抖音封面 (9:16)\n4. 小红书封面 (3:4)\n\n总耗时: {end_time - start_time:.2f} 秒[/bold green]"
+        )
+    console.print(Panel.fit(done_msg))
 
 if __name__ == "__main__":
     import moviepy

@@ -19,10 +19,25 @@ API_CONFIG = {
     # 推荐的治愈系声音：
     # "longxiaochun" (龙小淳 - 极度温柔治愈的女声)
     # "longfeiye" (龙飞夜 - 沉稳磁性的深夜男声)
-    "tts_voice": "longxiaochun" 
+    "tts_voice": "longyue_v3",
+    # [环境音：…] 在音轨上插入的静音秒数（后期可叠真实环境声）
+    "tts_env_silence_seconds": 4.0,
 }
 # 视频总时长 (分钟)
-TOTAL_VIDEO_MINUTES = 15  
+TOTAL_VIDEO_MINUTES = 15
+
+# True：不调用 assemble_pro_video（不压制 Final_Video_*.mp4）；仍会生成故事、配音、配图、AI 短片素材、封面等
+SKIP_FINAL_VIDEO_RENDER = True
+
+# 大模型写稿时遵守的「语音友好」标记，语义对齐 CosyVoice SSML（停顿≈<break>，留白≈长静音）
+# 文档: https://help.aliyun.com/zh/model-studio/introduction-to-cosyvoice-ssml-markup-language
+TTS_SCRIPT_DIRECTIVE = """
+【语音合成标记规范 — 必须严格遵守，勿自行写 <speak> 等 XML】
+1) 句内短停顿：使用 [停顿]（约 0.8 秒），或 [停顿500ms]、[停顿1s]；时长范围同 SSML break：50ms～10000ms，或整秒 1s～10s。
+2) 场景留白：单独一行 [环境音：简短描述]（如雨声、铁轨声）。该段不朗读，仅插入静音轨，便于后期叠环境声；不要编造 OSS/HTTP 背景音乐链接。
+3) 不要用 [叹气][轻笑] 等会被念成汉字的拟声标签；情绪请用文字描写，配合 [停顿] 控制气口。
+4) 正常断句仍用中文标点 。！？，；换行表示段落气口。
+""".strip()
 
 # ==========================================
 # 2. 内容配置 (品牌 IP 与主题)
