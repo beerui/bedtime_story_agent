@@ -26,6 +26,8 @@ from rich.console import Console
 from rich.panel import Panel
 
 from config import API_CONFIG, PROTAGONIST, THEMES
+import dashscope
+from dashscope.audio.tts_v2 import SpeechSynthesizer
 
 console = Console()
 
@@ -219,30 +221,42 @@ def generate_soothing_noise(output_path, duration=60):
 # 模块：双引擎智能配音与字幕 (防吃异常修复版)
 # ==========================================
 async def _synthesize_cosyvoice(text, output_path):
-    url = "https://dashscope-intl.aliyuncs.com/api/v1/services/audio/text-to-speech/text-to-speech"
-    headers = {
-        "Authorization": f"Bearer {API_CONFIG['cosyvoice_api_key']}", 
-        "Content-Type": "application/json"
-    }
-    
-    # 核心修复：阿里接口的参数名叫 speed，1.0 是原速，0.8 表示减速 20% (适合助眠)
-    payload = {
-        "model": "cosyvoice-v1", 
-        "input": {"text": text}, 
-        "parameters": {
-            "voice": API_CONFIG["tts_voice"], 
-            "speed": 0.8 
-        }
-    }
-    
-    response = await asyncio.to_thread(requests.post, url, headers=headers, json=payload, timeout=30)
-    
-    # 修复：严格校验返回类型，防止把阿里的 JSON 报错信息当成 MP3 写入文件
-    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("audio"):
-        with open(output_path, "wb") as f: 
-            f.write(response.content)
-    else:
-        raise Exception(f"阿里云接口拒绝请求: {response.text}")
+    def sync_synthesize():
+        # 配置您的 API Key
+        dashscope.api_key = API_CONFIG['cosyvoice_api_key']
+        # 强制指定为北京地域的 WebSocket 节点
+        dashscope.base_websocket_api_url = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
+        
+        # 获取 config 中的音色
+        voice_name = API_CONFIG.get("tts_voice", "longxiaochun")
+        
+        # 智能匹配模型版本：
+        # 如果您在 config.py 中换成了 "longanyang"，这里可以自动用 V3 模型
+        model_version = "cosyvoice-v1"
+        if voice_name == "longanyang" or "v3" in voice_name:
+            model_version = "cosyvoice-v3-flash"
+        elif "v2" in voice_name:
+            model_version = "cosyvoice-v2"
+
+        # 实例化 SpeechSynthesizer，这里添加了 rate=0.8 使语速变慢以适合助眠
+        synthesizer = SpeechSynthesizer(
+            model=model_version, 
+            voice=voice_name,
+            rate=0.8  # 官方 SDK 支持 rate 参数调整语速 (1.0为原速)
+        )
+        
+        # 发送待合成文本
+        audio = synthesizer.call(text)
+        
+        if audio is None or len(audio) == 0:
+            raise Exception("调用 SDK 成功但返回的音频数据为空！")
+            
+        # 将音频保存至本地
+        with open(output_path, 'wb') as f:
+            f.write(audio)
+
+    # 包装进异步线程池中，避免阻塞其他并发任务（如图片生成）
+    await asyncio.to_thread(sync_synthesize)
 
 async def generate_audio(text, output_dir):
     voice_path = os.path.join(output_dir, "voice.mp3")
