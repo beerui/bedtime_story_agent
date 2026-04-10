@@ -109,10 +109,10 @@ def apply_ken_burns(image_path, duration, zoom_rate=0.15):
     return final_clip.set_duration(duration)
 
 # ==========================================
-# 模块：图生视频大模型引擎 (彻底切换为：阿里云通义万相)
+# 模块：图生视频大模型引擎 (阿里云通义万相 Wan2.x 自动轮询版)
 # ==========================================
 async def generate_ai_video(image_path, output_path):
-    # 🌟 直接复用你刚才配好的 CosyVoice 阿里云 Key！无需额外配置！
+    # 复用你的阿里云 API Key
     api_key = API_CONFIG.get("cosyvoice_api_key", "").strip()
     if not api_key: 
         console.print("[yellow]    ⚠️ 未配置阿里云 API Key，跳过视频生成。[/yellow]")
@@ -125,29 +125,40 @@ async def generate_ai_video(image_path, output_path):
         from dashscope import VideoSynthesis
         dashscope.api_key = api_key
         
-        console.print(f"    🎬 唤醒阿里云万相大模型生成动态视频: {os.path.basename(image_path)}...")
+        console.print(f"    🎬 唤醒阿里云视频大模型: {os.path.basename(image_path)}...")
         
         def run_sdk():
-            # DashScope SDK 非常聪明，直接用 file:// 前缀就能自动把本地图片传给服务器
             local_file_uri = f"file://{os.path.abspath(image_path)}"
             
-            # 发起异步图生视频任务
-            rsp = VideoSynthesis.async_call(
-                model='wanx-video-generation', # 阿里云官方通义万相图生视频模型
-                img_url=local_file_uri,
-                prompt="cinematic, highly detailed, slow motion, gentle wind, dynamic lighting, 4k" # 赋予静态图片动态生命力的提示词
-            )
+            # 你的后台截图里最新、最强的免费图生视频模型列表（按画质优先级排序）
+            test_models = ["wan2.7-i2v", "wan2.6-i2v", "wan2.1-i2v"]
             
-            if rsp.status_code != 200:
-                raise Exception(f"任务提交失败: {rsp.code} - {rsp.message}")
+            task_id = None
+            for m in test_models:
+                console.print(f"    -> 正在尝试提交通义万相模型: [bold]{m}[/bold]")
+                rsp = VideoSynthesis.async_call(
+                    model=m,
+                    image_url=local_file_uri, # wan2.x系列图生视频的官方传参名是 image_url
+                    prompt="cinematic, highly detailed, slow motion, gentle wind, dynamic lighting, 4k"
+                )
                 
-            task_id = rsp.output.task_id
-            console.print(f"    ⏳ 视频生成任务已提交 (Task ID: {task_id})，百炼服务器渲染约需 1-3 分钟，请稍候...")
+                if rsp.status_code == 200:
+                    task_id = rsp.output.task_id
+                    console.print(f"    [green]✅ 任务提交成功！(模型: {m}, Task ID: {task_id})[/green]")
+                    break
+                else:
+                    # 如果当前模型失败（比如额度用完），打印警告并继续尝试下一个
+                    console.print(f"    [dim]⚠️ {m} 提交失败 ({rsp.code}: {rsp.message})，尝试下一个...[/dim]")
+                    
+            if not task_id:
+                raise Exception("所有可用的视频模型均提交失败，请检查阿里云平台额度。")
+            
+            console.print(f"    ⏳ 视频生成中，百炼服务器渲染约需 1-3 分钟，请稍候...")
             
             # 轮询查询视频是否生成完毕
             import time
             while True:
-                time.sleep(5) # 每 5 秒问一次服务器画好没
+                time.sleep(5) 
                 status_rsp = VideoSynthesis.fetch(task_id)
                 if status_rsp.status_code == 200:
                     status = status_rsp.output.task_status
@@ -173,7 +184,7 @@ async def generate_ai_video(image_path, output_path):
     except Exception as e:
         console.print(f"[red]    ❌ 阿里云视频大模型调用异常: {str(e)}[/red]")
         import traceback
-        traceback.print_exc() # 打印完整的追踪日志
+        traceback.print_exc() 
         return None
 
 # ==========================================
