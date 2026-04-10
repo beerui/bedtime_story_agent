@@ -109,10 +109,9 @@ def apply_ken_burns(image_path, duration, zoom_rate=0.15):
     return final_clip.set_duration(duration)
 
 # ==========================================
-# 模块：图生视频大模型引擎 (阿里云通义万相 Wan2.x 自动轮询版)
+# 模块：图生视频大模型引擎 (阿里云通义万相 真·自动容错降级版)
 # ==========================================
 async def generate_ai_video(image_path, output_path):
-    # 复用你的阿里云 API Key
     api_key = API_CONFIG.get("cosyvoice_api_key", "").strip()
     if not api_key: 
         console.print("[yellow]    ⚠️ 未配置阿里云 API Key，跳过视频生成。[/yellow]")
@@ -130,47 +129,46 @@ async def generate_ai_video(image_path, output_path):
         def run_sdk():
             local_file_uri = f"file://{os.path.abspath(image_path)}"
             
-            # 你的后台截图里最新、最强的免费图生视频模型列表（按画质优先级排序）
-            test_models = ["wan2.7-i2v", "wan2.6-i2v", "wan2.1-i2v"]
+            # 【核心修复】：使用官方确认支持当前 SDK img_url 参数的经典稳定模型
+            # 按照 画质优先 -> 性价比优先 的顺序自动轮询
+            test_models = ["wanx2.1-i2v-plus", "wanx2.1-i2v-turbo", "wan2.6-i2v-flash"]
             
-            task_id = None
             for m in test_models:
                 console.print(f"    -> 正在尝试提交通义万相模型: [bold]{m}[/bold]")
                 rsp = VideoSynthesis.async_call(
                     model=m,
-                    image_url=local_file_uri, # wan2.x系列图生视频的官方传参名是 image_url
+                    img_url=local_file_uri,
                     prompt="cinematic, highly detailed, slow motion, gentle wind, dynamic lighting, 4k"
                 )
                 
                 if rsp.status_code == 200:
                     task_id = rsp.output.task_id
                     console.print(f"    [green]✅ 任务提交成功！(模型: {m}, Task ID: {task_id})[/green]")
-                    break
+                    console.print(f"    ⏳ 正在等待百炼服务器渲染，请稍候...")
+                    
+                    # 轮询状态
+                    import time
+                    while True:
+                        time.sleep(5) 
+                        status_rsp = VideoSynthesis.fetch(task_id)
+                        if status_rsp.status_code == 200:
+                            status = status_rsp.output.task_status
+                            if status == 'SUCCEEDED':
+                                return status_rsp.output.video_url
+                            elif status in ['FAILED', 'UNKNOWN']:
+                                error_msg = status_rsp.output.get('message', '未知错误')
+                                # 【核心修复】：拦截异步报错！不抛出异常，而是 break 跳出 while 循环，去尝试下一个模型
+                                console.print(f"    [dim]⚠️ {m} 服务端渲染失败 ({error_msg})，自动切换下一个模型...[/dim]")
+                                break 
+                        else:
+                            console.print(f"    [dim]⚠️ {m} 查询状态失败 ({status_rsp.message})，自动切换下一个模型...[/dim]")
+                            break
                 else:
-                    # 如果当前模型失败（比如额度用完），打印警告并继续尝试下一个
                     console.print(f"    [dim]⚠️ {m} 提交失败 ({rsp.code}: {rsp.message})，尝试下一个...[/dim]")
                     
-            if not task_id:
-                raise Exception("所有可用的视频模型均提交失败，请检查阿里云平台额度。")
-            
-            console.print(f"    ⏳ 视频生成中，百炼服务器渲染约需 1-3 分钟，请稍候...")
-            
-            # 轮询查询视频是否生成完毕
-            import time
-            while True:
-                time.sleep(5) 
-                status_rsp = VideoSynthesis.fetch(task_id)
-                if status_rsp.status_code == 200:
-                    status = status_rsp.output.task_status
-                    if status == 'SUCCEEDED':
-                        return status_rsp.output.video_url
-                    elif status in ['FAILED', 'UNKNOWN']:
-                        error_msg = status_rsp.output.get('message', '未知错误')
-                        raise Exception(f"服务器渲染失败: {error_msg}")
-                else:
-                    raise Exception(f"查询状态失败: {status_rsp.message}")
+            # 如果所有的模型都轮询完了还是失败，才真正抛出异常触发降级保护
+            raise Exception("所有可用的视频模型均已尝试完毕且均告失败，请检查阿里云平台额度。")
 
-        # 丢进异步线程池，防止程序卡死
         video_url = await asyncio.to_thread(run_sdk)
         
         console.print(f"    📥 渲染完成！正在下载视频到本地...")
@@ -183,8 +181,6 @@ async def generate_ai_video(image_path, output_path):
 
     except Exception as e:
         console.print(f"[red]    ❌ 阿里云视频大模型调用异常: {str(e)}[/red]")
-        import traceback
-        traceback.print_exc() 
         return None
 
 # ==========================================
