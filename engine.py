@@ -325,59 +325,119 @@ async def generate_audio(text, output_dir):
     else:
         console.print("  [dim]⚡ 未配置 CosyVoice 密钥，自动降级为微软 Edge-TTS[/dim]")
 
-    parts = re.split(r'(\[.*?\]|【.*?】|\(.*?\)|（.*?）)', text)
+    # ==========================================
+    # 1. 词法解析：分离纯文本与标签，彻底过滤 [叹气] 等动作描写
+    # ==========================================
+    tokens = []
+    # 匹配所有的方括号/圆括号标签，以及非标签的普通文本
+    for m in re.finditer(r'(\[.*?\]|【.*?】|\(.*?\)|（.*?）)|([^\[\]【】()（）]+)', text):
+        tag = m.group(1)
+        txt = m.group(2)
+        if tag:
+            sec = _silence_seconds_for_markup(tag)
+            if sec is not None:
+                # 转换为 SSML break 支持的毫秒，最高不超过10秒
+                ms = min(10000, max(50, int(sec * 1000)))
+                tokens.append({"type": "break", "ms": ms, "sec": sec, "raw": tag})
+            # 如果 sec is None（比如 [叹气]），直接丢弃该标签，防止被读出来
+        elif txt:
+            # 将普通文本按照标点拆分
+            sub_sentences = re.split(r'([。！？!?\n]+)', txt)
+            for j in range(0, len(sub_sentences) - 1, 2):
+                sent = sub_sentences[j] + sub_sentences[j+1]
+                if sent.strip():
+                    tokens.append({"type": "text", "text": sent.strip(), "ends_with_punc": True})
+            # 处理没有标点结尾的残余片段
+            if len(sub_sentences) % 2 != 0 and sub_sentences[-1].strip():
+                tokens.append({"type": "text", "text": sub_sentences[-1].strip(), "ends_with_punc": False})
+
+    # ==========================================
+    # 2. 句法组装：把停顿吸附到句子末尾，实现不断层的自然呼吸
+    # ==========================================
+    blocks = []
+    current_block = {"type": "speech", "text": "", "ssml": "", "has_text": False, "ends_with_punc": False}
+    
+    for token in tokens:
+        if token["type"] == "text":
+            clean = token["text"].replace('**', '').replace('*', '').replace('---', '').strip()
+            # 过滤掉完全没有意义的特殊字符文本
+            if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean):
+                continue
+                
+            # 如果上一个片段已经结束了一句话，又遇到了新文本，则先封装旧区块
+            if current_block["has_text"] and current_block.get("ends_with_punc"):
+                blocks.append(current_block)
+                current_block = {"type": "speech", "text": "", "ssml": "", "has_text": False, "ends_with_punc": False}
+                
+            # 文本转换为符合 SSML 规范的安全字符串
+            ssml_safe = clean.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            current_block["text"] += clean
+            current_block["ssml"] += ssml_safe
+            current_block["has_text"] = True
+            current_block["ends_with_punc"] = token.get("ends_with_punc", False)
+                
+        elif token["type"] == "break":
+            if current_block["has_text"]:
+                if use_pro_voice:
+                    # 高级引擎：将 break 无缝吸附到当前这句话的 SSML 内
+                    current_block["ssml"] += f'<break time="{token["ms"]}ms"/>'
+                else:
+                    # EdgeTTS 降级：只能使用数字死静音切断
+                    blocks.append(current_block)
+                    current_block = {"type": "speech", "text": "", "ssml": "", "has_text": False, "ends_with_punc": False}
+                    blocks.append({"type": "pure_break", "sec": token["sec"], "raw": token["raw"]})
+            else:
+                # 若无前置文本支撑（独立占行的大段环境音留白）
+                blocks.append({"type": "pure_break", "sec": token["sec"], "raw": token["raw"]})
+
+    if current_block["has_text"]:
+        blocks.append(current_block)
+
+    # ==========================================
+    # 3. 执行语音合成与时间轴排布
+    # ==========================================
     audio_clips, temp_files, subtitles_info = [], [], []
     current_time = 0.0
     fallback_voice = "zh-CN-XiaoxiaoNeural"
     
-    for i, part in enumerate(parts):
-        part = part.strip()
-        if not part:
-            continue
-        silence_sec = _silence_seconds_for_markup(part)
-        if silence_sec is not None:
-            label = part if len(part) <= 48 else part[:45] + "..."
-            console.print(f"  ⏸️ 标记留白: '{label}' ({silence_sec:.2f}s)")
+    for i, block in enumerate(blocks):
+        if block["type"] == "pure_break":
+            sec = block["sec"]
+            label = block["raw"] if len(block["raw"]) <= 48 else block["raw"][:45] + "..."
+            console.print(f"  ⏸️ 独立留白: '{label}' ({sec:.2f}s)")
             sr = 44100
-            audio_clips.append(AudioArrayClip(np.zeros((int(sr * silence_sec), 2)), fps=sr))
-            current_time += silence_sec
+            audio_clips.append(AudioArrayClip(np.zeros((int(sr * sec), 2)), fps=sr))
+            current_time += sec
             continue
 
-        sub_sentences = re.split(r'([。！？!?\n]+)', part)
-        combined_sentences = [sub_sentences[j] + sub_sentences[j + 1] for j in range(0, len(sub_sentences) - 1, 2) if j + 1 < len(sub_sentences)]
-        if len(sub_sentences) % 2 != 0 and sub_sentences[-1]:
-            combined_sentences.append(sub_sentences[-1])
+        # 语音区块
+        sub_text_clean = block["text"]
+        synthesis_text = block["ssml"]
+        
+        console.print(f"  🎙️ 录音排布: {sub_text_clean[:15]}...")
+        temp_path = os.path.join(output_dir, f"temp_voice_{i}.mp3")
 
-        for j, sub_sentence in enumerate(combined_sentences):
-            clean_text = sub_sentence.replace('**', '').replace('*', '').replace('---', '').strip()
-            if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean_text):
-                continue
+        try:
+            if use_pro_voice:
+                # 用 <speak> 标签包裹完成最后组装发送给 CosyVoice
+                final_ssml = f"<speak>{synthesis_text}</speak>"
+                await _synthesize_cosyvoice(final_ssml, temp_path)
+            else:
+                await edge_tts.Communicate(sub_text_clean, fallback_voice, rate="-10%", pitch="-2Hz").save(temp_path)
+        except Exception as e:
+            console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
+            continue
 
-            console.print(f"  🎙️ 录音配对: {clean_text[:15]}...")
-            temp_path = os.path.join(output_dir, f"temp_voice_{i}_{j}.mp3")
-
-            try:
-                if use_pro_voice:
-                    await _synthesize_cosyvoice(clean_text, temp_path)
-                else:
-                    edge_clean_text = re.sub(r'\[.*?\]|【.*?】', '', clean_text)
-                    if not edge_clean_text.strip():
-                        continue
-                    await edge_tts.Communicate(edge_clean_text, fallback_voice, rate="-10%", pitch="-2Hz").save(temp_path)
-            except Exception as e:
-                console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
-                continue
-
-            try:
-                clip = AudioFileClip(temp_path)
-                audio_clips.append(clip)
-                temp_files.append(temp_path)
-                sub_text_clean = re.sub(r'\[.*?\]|【.*?】', '', clean_text).strip()
-                subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
-                current_time += clip.duration
-            except Exception as e:
-                console.print(f"[red]  ❌ 读取音频失败: {e}[/red]")
-                continue
+        try:
+            clip = AudioFileClip(temp_path)
+            audio_clips.append(clip)
+            temp_files.append(temp_path)
+            # 记录字幕（即便音频包含了1~2秒的 SSML break 后缀，字幕保留在画面上反而过渡更自然）
+            subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
+            current_time += clip.duration
+        except Exception as e:
+            console.print(f"[red]  ❌ 读取音频失败: {e}[/red]")
+            continue
 
     if not audio_clips:
         console.print("[bold red]❌ 严重错误：剧本中没有提取到任何有效语音！[/bold red]")
