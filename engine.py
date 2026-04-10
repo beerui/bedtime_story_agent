@@ -109,42 +109,71 @@ def apply_ken_burns(image_path, duration, zoom_rate=0.15):
     return final_clip.set_duration(duration)
 
 # ==========================================
-# 模块：图生视频大模型引擎 (智谱 CogVideoX)
+# 模块：图生视频大模型引擎 (彻底切换为：阿里云通义万相)
 # ==========================================
 async def generate_ai_video(image_path, output_path):
-    api_key = API_CONFIG.get("zhipu_api_key", "").strip()
-    if not api_key: return None 
+    # 🌟 直接复用你刚才配好的 CosyVoice 阿里云 Key！无需额外配置！
+    api_key = API_CONFIG.get("cosyvoice_api_key", "").strip()
+    if not api_key: 
+        console.print("[yellow]    ⚠️ 未配置阿里云 API Key，跳过视频生成。[/yellow]")
+        return None 
         
     if os.path.exists(output_path): return output_path 
 
     try:
-        from zhipuai import ZhipuAI
-        client = ZhipuAI(api_key=api_key)
+        import dashscope
+        from dashscope import VideoSynthesis
+        dashscope.api_key = api_key
         
-        with open(image_path, "rb") as f:
-            base64_img = base64.b64encode(f.read()).decode('utf-8')
+        console.print(f"    🎬 唤醒阿里云万相大模型生成动态视频: {os.path.basename(image_path)}...")
+        
+        def run_sdk():
+            # DashScope SDK 非常聪明，直接用 file:// 前缀就能自动把本地图片传给服务器
+            local_file_uri = f"file://{os.path.abspath(image_path)}"
             
-        console.print(f"    🎬 唤醒 CogVideoX 生成动态视频: {os.path.basename(image_path)}...")
-        response = await asyncio.to_thread(client.videos.generations, model="cogvideox", image_url=f"data:image/png;base64,{base64_img}")
-        task_id = response.id
-        
-        while True:
-            await asyncio.sleep(5) 
-            result = await asyncio.to_thread(client.videos.retrieve_videos_result, id=task_id)
-            status = result.task_status
-            if status == "SUCCESS":
-                video_url = result.video_result[0].url
-                break
-            elif status in ["FAIL", "FAILED"]:
-                return None
+            # 发起异步图生视频任务
+            rsp = VideoSynthesis.async_call(
+                model='wanx-video-generation', # 阿里云官方通义万相图生视频模型
+                img_url=local_file_uri,
+                prompt="cinematic, highly detailed, slow motion, gentle wind, dynamic lighting, 4k" # 赋予静态图片动态生命力的提示词
+            )
+            
+            if rsp.status_code != 200:
+                raise Exception(f"任务提交失败: {rsp.code} - {rsp.message}")
                 
+            task_id = rsp.output.task_id
+            console.print(f"    ⏳ 视频生成任务已提交 (Task ID: {task_id})，百炼服务器渲染约需 1-3 分钟，请稍候...")
+            
+            # 轮询查询视频是否生成完毕
+            import time
+            while True:
+                time.sleep(5) # 每 5 秒问一次服务器画好没
+                status_rsp = VideoSynthesis.fetch(task_id)
+                if status_rsp.status_code == 200:
+                    status = status_rsp.output.task_status
+                    if status == 'SUCCEEDED':
+                        return status_rsp.output.video_url
+                    elif status in ['FAILED', 'UNKNOWN']:
+                        error_msg = status_rsp.output.get('message', '未知错误')
+                        raise Exception(f"服务器渲染失败: {error_msg}")
+                else:
+                    raise Exception(f"查询状态失败: {status_rsp.message}")
+
+        # 丢进异步线程池，防止程序卡死
+        video_url = await asyncio.to_thread(run_sdk)
+        
+        console.print(f"    📥 渲染完成！正在下载视频到本地...")
         vid_data = await asyncio.to_thread(requests.get, video_url)
-        with open(output_path, 'wb') as f: f.write(vid_data.content)
+        with open(output_path, 'wb') as f: 
+            f.write(vid_data.content)
             
         console.print(f"[green]    ✅ 视频片段生动化完成: {os.path.basename(output_path)}[/green]")
         return output_path
+
     except Exception as e:
-        console.print(f"[red]    ❌ 视频大模型调用异常: {e}。触发降级保护。[/red]")
+        console.print(f"[red]    ❌ 阿里云视频大模型调用异常: {str(e)}[/red]")
+        import traceback
+        traceback.print_exc() # 打印完整的追踪日志
         return None
 
 # ==========================================
@@ -276,167 +305,148 @@ def _silence_seconds_for_markup(part: str):
         return max(0.05, min(10.0, sec))
     return None
 
-
 # ==========================================
-# 模块：双引擎智能配音与字幕 (防吃异常修复版)
+# 模块：阿里云 DashScope SDK 语音合成底层 (tts_v2 终极修复版)
 # ==========================================
-async def _synthesize_cosyvoice(text, output_path):
-    def sync_synthesize():
-        # 配置您的 API Key
-        dashscope.api_key = API_CONFIG['cosyvoice_api_key']
-        # 强制指定为北京地域的 WebSocket 节点
-        dashscope.base_websocket_api_url = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
-        
-        # 获取 config 中的音色
-        voice_name = API_CONFIG.get("tts_voice", "longxiaochun")
-        model_version = _cosyvoice_model_for_voice(voice_name)
-        console.print(f"\n[bold cyan][音频车间] 正在进行 CosyVoice 语音合成...[/bold cyan] 模型版本: {model_version}")
-
-        # 实例化 SpeechSynthesizer；speech_rate 控制语速（0.5–2.0，1.0 为原速），助眠略慢
+async def _synthesize_cosyvoice(text, output_path, speed=1.0):
+    dashscope.api_key = API_CONFIG.get('cosyvoice_api_key', '')
+    
+    def run_sdk():
+        # v2 版本的正确用法：实例化对象，直接传入参数
         synthesizer = SpeechSynthesizer(
-            model=model_version,
-            voice=voice_name,
-            speech_rate=0.8,
+            model='cosyvoice-v3-flash', # 模型版本
+            voice=API_CONFIG.get('tts_voice', 'longxiaochun'),
+            speech_rate=speed           # 语速参数
         )
         
-        # 发送待合成文本
-        audio = synthesizer.call(text)
-        if audio is None or len(audio) == 0:
-            raise Exception(
-                "CosyVoice 未返回音频（可能音色与模型不匹配、文本含非法 SSML、或接口报错）。"
-                "参见: https://help.aliyun.com/zh/model-studio/introduction-to-cosyvoice-ssml-markup-language"
-            )
-        console.print(f"    🎙️ 合成完成: {len(audio)} bytes")
+        # 直接调用 call，v2 版本会直接返回干净的音频 bytes 流！
+        audio_data = synthesizer.call(text)
+        
+        if audio_data:
+            with open(output_path, 'wb') as f:
+                f.write(audio_data)
+        else:
+            raise Exception("CosyVoice 返回了空的音频数据")
 
-        # 将音频保存至本地
-        with open(output_path, 'wb') as f:
-            f.write(audio)
-
-    # 包装进异步线程池中，避免阻塞其他并发任务（如图片生成）
-    await asyncio.to_thread(sync_synthesize)
+    # 包装为异步防止阻塞
+    await asyncio.to_thread(run_sdk)
 
 async def generate_audio(text, output_dir):
     voice_path = os.path.join(output_dir, "voice.mp3")
-    console.print("\n[bold cyan][音频车间] 正在进行精准分段录制...[/bold cyan]")
+    console.print("\n[bold cyan][音频车间] 正在进行精准分段录制 (抛弃 SSML，启用物理混音)...[/bold cyan]")
     
     use_pro_voice = bool(API_CONFIG.get("cosyvoice_api_key", "").strip())
-    if use_pro_voice:
-        console.print("  [bold green]🌟 检测到 CosyVoice 密钥，已激活[真人级呼吸情感引擎][/bold green]")
-    else:
-        console.print("  [dim]⚡ 未配置 CosyVoice 密钥，自动降级为微软 Edge-TTS[/dim]")
+    
+    # 工具：智能解析停顿秒数
+    def parse_pause(tag):
+        if "环境音" in tag: return 4.0
+        m = re.search(r'停顿\s*([0-9.]+)\s*(s|ms|秒)', tag, re.IGNORECASE)
+        if m:
+            val = float(m.group(1))
+            if m.group(2).lower() == 'ms': return val / 1000.0
+            return val
+        if "停顿" in tag: return 1.0
+        return None
 
-    # ==========================================
-    # 1. 词法解析：分离纯文本与标签，彻底过滤 [叹气] 等动作描写
-    # ==========================================
+    # 1. 词法解析
     tokens = []
-    # 匹配所有的方括号/圆括号标签，以及非标签的普通文本
     for m in re.finditer(r'(\[.*?\]|【.*?】|\(.*?\)|（.*?）)|([^\[\]【】()（）]+)', text):
         tag = m.group(1)
         txt = m.group(2)
         if tag:
-            sec = _silence_seconds_for_markup(tag)
-            if sec is not None:
-                # 转换为 SSML break 支持的毫秒，最高不超过10秒
-                ms = min(10000, max(50, int(sec * 1000)))
-                tokens.append({"type": "break", "ms": ms, "sec": sec, "raw": tag})
-            # 如果 sec is None（比如 [叹气]），直接丢弃该标签，防止被读出来
+            t = tag.strip()
+            # 记录语气参数，不生成任何 SSML
+            if t in ("[慢速]", "【慢速】"):
+                tokens.append({"type": "prosody", "speed": 0.8, "vol": 1.0, "raw": tag})
+            elif t in ("[轻声]", "【轻声】"):
+                tokens.append({"type": "prosody", "speed": 1.0, "vol": 0.4, "raw": tag})
+            elif t in ("[极弱]", "【极弱】"):
+                tokens.append({"type": "prosody", "speed": 0.6, "vol": 0.2, "raw": tag})
+            else:
+                sec = parse_pause(t)
+                if sec is not None:
+                    tokens.append({"type": "break", "sec": sec, "raw": tag})
         elif txt:
-            # 将普通文本按照标点拆分
             sub_sentences = re.split(r'([。！？!?\n]+)', txt)
             for j in range(0, len(sub_sentences) - 1, 2):
                 sent = sub_sentences[j] + sub_sentences[j+1]
-                if sent.strip():
-                    tokens.append({"type": "text", "text": sent.strip(), "ends_with_punc": True})
-            # 处理没有标点结尾的残余片段
+                if sent.strip(): tokens.append({"type": "text", "text": sent.strip()})
             if len(sub_sentences) % 2 != 0 and sub_sentences[-1].strip():
-                tokens.append({"type": "text", "text": sub_sentences[-1].strip(), "ends_with_punc": False})
+                tokens.append({"type": "text", "text": sub_sentences[-1].strip()})
 
-    # ==========================================
-    # 2. 句法组装：把停顿吸附到句子末尾，实现不断层的自然呼吸
-    # ==========================================
+    # 2. 组装区块
     blocks = []
-    current_block = {"type": "speech", "text": "", "ssml": "", "has_text": False, "ends_with_punc": False}
+    current_speed = 1.0
+    current_vol = 1.0
     
     for token in tokens:
-        if token["type"] == "text":
-            clean = token["text"].replace('**', '').replace('*', '').replace('---', '').strip()
-            # 过滤掉完全没有意义的特殊字符文本
-            if not re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean):
-                continue
-                
-            # 如果上一个片段已经结束了一句话，又遇到了新文本，则先封装旧区块
-            if current_block["has_text"] and current_block.get("ends_with_punc"):
-                blocks.append(current_block)
-                current_block = {"type": "speech", "text": "", "ssml": "", "has_text": False, "ends_with_punc": False}
-                
-            # 文本转换为符合 SSML 规范的安全字符串
-            ssml_safe = clean.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            current_block["text"] += clean
-            current_block["ssml"] += ssml_safe
-            current_block["has_text"] = True
-            current_block["ends_with_punc"] = token.get("ends_with_punc", False)
-                
+        if token["type"] == "prosody":
+            current_speed = token["speed"]
+            current_vol = token["vol"]
         elif token["type"] == "break":
-            if current_block["has_text"]:
-                if use_pro_voice:
-                    # 高级引擎：将 break 无缝吸附到当前这句话的 SSML 内
-                    current_block["ssml"] += f'<break time="{token["ms"]}ms"/>'
-                else:
-                    # EdgeTTS 降级：只能使用数字死静音切断
-                    blocks.append(current_block)
-                    current_block = {"type": "speech", "text": "", "ssml": "", "has_text": False, "ends_with_punc": False}
-                    blocks.append({"type": "pure_break", "sec": token["sec"], "raw": token["raw"]})
-            else:
-                # 若无前置文本支撑（独立占行的大段环境音留白）
-                blocks.append({"type": "pure_break", "sec": token["sec"], "raw": token["raw"]})
+            blocks.append({"type": "pure_break", "sec": token["sec"], "raw": token["raw"]})
+        elif token["type"] == "text":
+            clean = token["text"].replace('**', '').replace('*', '').replace('---', '').strip()
+            if re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean):
+                blocks.append({"type": "speech", "text": clean, "speed": current_speed, "vol": current_vol})
+                # 【核心修复】：读完这句话，立刻将大模型的状态重置为正常 [原音]，互不干扰！
+                current_speed = 1.0
+                current_vol = 1.0
 
-    if current_block["has_text"]:
-        blocks.append(current_block)
-
-    # ==========================================
-    # 3. 执行语音合成与时间轴排布
-    # ==========================================
+    # 3. 合成与拼接
     audio_clips, temp_files, subtitles_info = [], [], []
     current_time = 0.0
-    fallback_voice = "zh-CN-XiaoxiaoNeural"
     
     for i, block in enumerate(blocks):
         if block["type"] == "pure_break":
             sec = block["sec"]
-            label = block["raw"] if len(block["raw"]) <= 48 else block["raw"][:45] + "..."
-            console.print(f"  ⏸️ 独立留白: '{label}' ({sec:.2f}s)")
+            console.print(f"  ⏸️ 独立留白: '{block['raw']}' ({sec:.2f}s)")
             sr = 44100
             audio_clips.append(AudioArrayClip(np.zeros((int(sr * sec), 2)), fps=sr))
             current_time += sec
             continue
 
-        # 语音区块
         sub_text_clean = block["text"]
-        synthesis_text = block["ssml"]
+        speed = block["speed"]
+        vol = block["vol"]
         
-        console.print(f"  🎙️ 录音排布: {sub_text_clean[:15]}...")
+        console.print(f"  🎙️ [速:{speed}, 音:{vol}]: {sub_text_clean[:15]}...")
         temp_path = os.path.join(output_dir, f"temp_voice_{i}.mp3")
 
         try:
             if use_pro_voice:
-                # 用 <speak> 标签包裹完成最后组装发送给 CosyVoice
-                final_ssml = f"<speak>{synthesis_text}</speak>"
-                await _synthesize_cosyvoice(final_ssml, temp_path)
+                # 仅传文本和 speed 参数，完全避开 SSML 坑
+                await _synthesize_cosyvoice(sub_text_clean, temp_path, speed=speed)
             else:
-                await edge_tts.Communicate(sub_text_clean, fallback_voice, rate="-10%", pitch="-2Hz").save(temp_path)
+                await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate="-10%").save(temp_path)
         except Exception as e:
             console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
             continue
 
         try:
             clip = AudioFileClip(temp_path)
+            
+            # 【物理降维打击】：压低音量
+            if vol < 1.0:
+                clip = clip.volumex(vol) 
+                
+            # ==========================================
+            # 🎧 【核心听觉修复：消除数字硬切】
+            # ==========================================
+            # 根据这段音频的长短，动态计算淡入淡出时间
+            # 极短的淡入(0.1s)消除起爆音，舒缓的淡出(0.4s)保留呼吸尾音
+            fade_in_time = min(0.1, clip.duration / 3)
+            fade_out_time = min(0.4, clip.duration / 3)
+            
+            clip = clip.fx(audio_fadein, fade_in_time).fx(audio_fadeout, fade_out_time)
+            # ==========================================
+                
             audio_clips.append(clip)
             temp_files.append(temp_path)
-            # 记录字幕（即便音频包含了1~2秒的 SSML break 后缀，字幕保留在画面上反而过渡更自然）
             subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
             current_time += clip.duration
         except Exception as e:
-            console.print(f"[red]  ❌ 读取音频失败: {e}[/red]")
+            console.print(f"[red]  ❌ 读取音频片段失败: {e}[/red]")
             continue
 
     if not audio_clips:
@@ -446,6 +456,7 @@ async def generate_audio(text, output_dir):
     console.print("  -> 正在拼接音频时间轴...")
     final_audio = concatenate_audioclips(audio_clips)
     final_audio.write_audiofile(voice_path, logger=None)
+    
     for c in audio_clips: c.close()
     for tf in temp_files:
         try: os.remove(tf)
@@ -453,30 +464,39 @@ async def generate_audio(text, output_dir):
     return voice_path, subtitles_info
 
 # ==========================================
-# 模块：图生图底图生成器
+# 模块：图生图底图生成器 (修改为：只生成1张图片)
 # ==========================================
 def generate_multi_images(theme_name, output_dir):
-    console.print("\n[bold cyan][视觉车间] 正在生成静态高质感背景图...[/bold cyan]")
+    console.print("\n[bold cyan][视觉车间] 正在生成静态高质感背景图(单图模式)...[/bold cyan]")
     theme_info = THEMES[theme_name]
+    
+    output_filename = os.path.join(output_dir, f"scene_1.png")
     saved_images = []
-    for i, modifier in enumerate(["late evening lighting", "deep night, dark and moody", "midnight, very dark, cinematic shadows"]):
-        output_filename = os.path.join(output_dir, f"scene_{i+1}.png")
-        if os.path.exists(output_filename):
+    
+    if os.path.exists(output_filename):
+        saved_images.append(output_filename)
+        return saved_images
+
+    # 移除了时间修饰词循环，只生成一张主图
+    pollination_prompt = f"{theme_info['image_prompt']}, 4k"
+    image_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(pollination_prompt)}?width=1024&height=1792&nologo=true&seed=999"
+    
+    for attempt in range(4):
+        try:
+            response = requests.get(image_url, timeout=60)
+            response.raise_for_status() 
+            with open(output_filename, 'wb') as f: 
+                f.write(response.content)
             saved_images.append(output_filename)
-            continue
-        pollination_prompt = f"{theme_info['image_prompt']}, {modifier}, 4k"
-        image_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(pollination_prompt)}?width=1024&height=1792&nologo=true&seed={i*999}"
-        for attempt in range(4):
-            try:
-                response = requests.get(image_url, timeout=60)
-                response.raise_for_status() 
-                with open(output_filename, 'wb') as f: f.write(response.content)
-                saved_images.append(output_filename)
-                time.sleep(3) 
+            console.print(f"  ✅ 场景图生成成功！")
+            break
+        except Exception as e:
+            if attempt < 3: 
+                time.sleep(5)
+            else: 
+                console.print(f"[red]  ❌ 图片生成失败: {e}[/red]")
                 break
-            except Exception as e:
-                if attempt < 3: time.sleep(5)
-                else: break
+                
     return saved_images
 
 # ==========================================
