@@ -25,9 +25,13 @@ import moviepy.video.fx.all as vfx
 from rich.console import Console
 from rich.panel import Panel
 
-from config import API_CONFIG, PROTAGONIST, THEMES, TTS_SCRIPT_DIRECTIVE
+from config import API_CONFIG, PROTAGONIST, THEMES, TTS_SCRIPT_DIRECTIVE, PROSODY_CURVES, CURRENT_PROSODY_CURVE
 import dashscope
 from dashscope.audio.tts_v2 import SpeechSynthesizer
+from prosody import (
+    ProsodyCurve, apply_curve_to_blocks, parse_silence, parse_phase_marker,
+    TAG_MULTIPLIERS,
+)
 
 console = Console()
 
@@ -249,7 +253,8 @@ def generate_story(theme_name, output_dir, target_words):
         messages=[{"role": "user", "content": (
             f"你是睡眠冥想心理学家。主题【{theme_name}】。\n"
             f"主题氛围要求：{theme_brief}\n\n{spec}\n\n"
-            "请写「三段式心理暗示大纲」：起—承—合；大纲里可标注计划在何处用 [环境音：] 与 [停顿]。"
+            "请写「三段式心理暗示大纲」，明确标注 [阶段：引入]、[阶段：深入]、[阶段：尾声] 三个阶段的分界。"
+            "大纲里标注计划在何处用 [环境音：] 与 [停顿]。"
         )}],
         stream=False,
     ).choices[0].message.content
@@ -258,7 +263,10 @@ def generate_story(theme_name, output_dir, target_words):
         messages=[{"role": "user", "content": (
             f"你是深夜电台主播，声音要慢、稳、催眠感。\n{spec}\n\n"
             f"根据大纲扩写成完整口播稿（约 {target_words} 字量级）：\n{outline}\n\n"
-            "必须实际写出 [环境音：…]、[停顿] 或 [停顿500ms]/[停顿1s] 等标记，位置要自然；禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。"
+            "要求：\n"
+            "1) 必须在正文对应位置保留 [阶段：引入]、[阶段：深入]、[阶段：尾声] 标记。\n"
+            "2) 必须实际写出 [环境音：…]、[停顿] 或 [停顿500ms]/[停顿1s] 等标记，位置要自然。\n"
+            "3) 禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。"
         )}],
         stream=False,
     ).choices[0].message.content
@@ -266,8 +274,14 @@ def generate_story(theme_name, output_dir, target_words):
         model=API_CONFIG["text_model"],
         messages=[{"role": "user", "content": (
             f"你是严苛主编：去掉 AI 腔与说教感，增强电影感与感官描写。\n{spec}\n\n"
-            "保留初稿中所有 [环境音：]、[停顿…] 标记，不得删除或改成自然语言描述；可微调措辞与标点。\n\n初稿：\n"
-            f"{draft}"
+            "保留初稿中所有 [阶段：]、[环境音：]、[停顿…]、[慢速]、[轻声]、[极弱] 标记，不得删除或改成自然语言描述；可微调措辞与标点。\n\n"
+            "【禁止清单】：\n"
+            "- 排比不超过两组\n"
+            "- 不以反问句结尾\n"
+            "- 禁止「让我们」「我们一起」等集体感措辞\n"
+            "- 禁止「你有没有想过」「其实」等说教开头\n"
+            "- 每段至少一个具体感官细节（触觉/嗅觉/温度/声音质感）\n\n"
+            f"初稿：\n{draft}"
         )}],
         stream=False,
     ).choices[0].message.content
@@ -294,180 +308,175 @@ def _cosyvoice_model_for_voice(voice_name: str) -> str:
     return "cosyvoice-v1"
 
 
-def _silence_seconds_for_markup(part: str):
-    """解析 [环境音：…]、[停顿…]；返回静音时长（秒），非此类标记返回 None。"""
-    p = part.strip()
-    if re.match(r"^(\[环境音[^\]]*\]|【环境音[^】]*】)$", p):
-        return float(API_CONFIG.get("tts_env_silence_seconds", 4.0))
-    if p in ("[停顿]", "【停顿】"):
-        return 0.8
-    m = re.match(r"^\[停顿(\d+)ms\]$", p) or re.match(r"^【停顿(\d+)ms】$", p)
-    if m:
-        ms = int(m.group(1))
-        ms = max(50, min(10000, ms))
-        return ms / 1000.0
-    m = re.match(r"^\[停顿(\d+(?:\.\d+)?)s\]$", p) or re.match(r"^【停顿(\d+(?:\.\d+)?)s】$", p)
-    if m:
-        sec = float(m.group(1))
-        return max(0.05, min(10.0, sec))
-    return None
 
 # ==========================================
 # 模块：阿里云 DashScope SDK 语音合成底层 (tts_v2 终极修复版)
 # ==========================================
-async def _synthesize_cosyvoice(text, output_path, speed=1.0):
+async def _synthesize_cosyvoice(text, output_path, speed=0.8):
     dashscope.api_key = API_CONFIG.get('cosyvoice_api_key', '')
-    
+
     def run_sdk():
-        # v2 版本的正确用法：实例化对象，直接传入参数
+        voice = API_CONFIG.get('tts_voice', 'longxiaochun')
         synthesizer = SpeechSynthesizer(
-            model='cosyvoice-v3-flash', # 模型版本
-            voice=API_CONFIG.get('tts_voice', 'longxiaochun'),
-            speech_rate=speed           # 语速参数
+            model=_cosyvoice_model_for_voice(voice),
+            voice=voice,
+            speech_rate=speed,
         )
-        
-        # 直接调用 call，v2 版本会直接返回干净的音频 bytes 流！
+
         audio_data = synthesizer.call(text)
-        
-        if audio_data:
-            with open(output_path, 'wb') as f:
-                f.write(audio_data)
-        else:
+
+        if not audio_data:
             raise Exception("CosyVoice 返回了空的音频数据")
+
+        with open(output_path, 'wb') as f:
+            f.write(audio_data)
 
     # 包装为异步防止阻塞
     await asyncio.to_thread(run_sdk)
 
 async def generate_audio(text, output_dir):
     voice_path = os.path.join(output_dir, "voice.mp3")
-    console.print("\n[bold cyan][音频车间] 正在进行精准分段录制 (抛弃 SSML，启用物理混音)...[/bold cyan]")
-    
+    console.print("\n[bold cyan][音频车间] 韵律弧线引擎启动 (Prosody Curve + 物理混音)...[/bold cyan]")
+
     use_pro_voice = bool(API_CONFIG.get("cosyvoice_api_key", "").strip())
-    
-    # 工具：智能解析停顿秒数
-    def parse_pause(tag):
-        if "环境音" in tag: return 4.0
-        m = re.search(r'停顿\s*([0-9.]+)\s*(s|ms|秒)', tag, re.IGNORECASE)
-        if m:
-            val = float(m.group(1))
-            if m.group(2).lower() == 'ms': return val / 1000.0
-            return val
-        if "停顿" in tag: return 1.0
-        return None
+    curve = ProsodyCurve(PROSODY_CURVES[CURRENT_PROSODY_CURVE])
 
     # 1. 词法解析
     tokens = []
+    prev_was_newlines = False
     for m in re.finditer(r'(\[.*?\]|【.*?】|\(.*?\)|（.*?）)|([^\[\]【】()（）]+)', text):
         tag = m.group(1)
         txt = m.group(2)
         if tag:
             t = tag.strip()
-            # 记录语气参数，不生成任何 SSML
-            if t in ("[慢速]", "【慢速】"):
-                tokens.append({"type": "prosody", "speed": 0.8, "vol": 1.0, "raw": tag})
-            elif t in ("[轻声]", "【轻声】"):
-                tokens.append({"type": "prosody", "speed": 1.0, "vol": 0.4, "raw": tag})
-            elif t in ("[极弱]", "【极弱】"):
-                tokens.append({"type": "prosody", "speed": 0.6, "vol": 0.2, "raw": tag})
-            else:
-                sec = parse_pause(t)
-                if sec is not None:
-                    tokens.append({"type": "break", "sec": sec, "raw": tag})
+            # 阶段标记
+            phase = parse_phase_marker(t)
+            if phase:
+                tokens.append({"type": "phase_marker", "phase": phase, "raw": tag})
+                continue
+            # 语气标记 → 存乘法系数
+            tag_name = t.strip("[]【】")
+            if tag_name in TAG_MULTIPLIERS:
+                tokens.append({"type": "prosody", "tag": tag_name, "raw": tag})
+                continue
+            # 停顿/环境音
+            sec = parse_silence(t)
+            if sec is not None:
+                tokens.append({"type": "break", "sec": sec, "raw": tag})
         elif txt:
+            # 检测段落边界（连续换行）
+            if "\n\n" in txt:
+                prev_was_newlines = True
             sub_sentences = re.split(r'([。！？!?\n]+)', txt)
             for j in range(0, len(sub_sentences) - 1, 2):
-                sent = sub_sentences[j] + sub_sentences[j+1]
-                if sent.strip(): tokens.append({"type": "text", "text": sent.strip()})
+                sent = sub_sentences[j] + sub_sentences[j + 1]
+                if sent.strip():
+                    tok = {"type": "text", "text": sent.strip()}
+                    if prev_was_newlines:
+                        tok["paragraph_start"] = True
+                        prev_was_newlines = False
+                    tokens.append(tok)
             if len(sub_sentences) % 2 != 0 and sub_sentences[-1].strip():
-                tokens.append({"type": "text", "text": sub_sentences[-1].strip()})
+                tok = {"type": "text", "text": sub_sentences[-1].strip()}
+                if prev_was_newlines:
+                    tok["paragraph_start"] = True
+                    prev_was_newlines = False
+                tokens.append(tok)
 
-    # 2. 组装区块
+    # 2. 组装区块（prosody 标记附着到下一个 speech block）
     blocks = []
-    current_speed = 1.0
-    current_vol = 1.0
-    
+    pending_multiplier = None
+
     for token in tokens:
-        if token["type"] == "prosody":
-            current_speed = token["speed"]
-            current_vol = token["vol"]
+        if token["type"] == "phase_marker":
+            blocks.append({"type": "phase_marker", "phase": token["phase"]})
+        elif token["type"] == "prosody":
+            pending_multiplier = TAG_MULTIPLIERS[token["tag"]]
         elif token["type"] == "break":
             blocks.append({"type": "pure_break", "sec": token["sec"], "raw": token["raw"]})
         elif token["type"] == "text":
             clean = token["text"].replace('**', '').replace('*', '').replace('---', '').strip()
             if re.search(r'[\u4e00-\u9fa5a-zA-Z0-9]', clean):
-                blocks.append({"type": "speech", "text": clean, "speed": current_speed, "vol": current_vol})
-                # 【核心修复】：读完这句话，立刻将大模型的状态重置为正常 [原音]，互不干扰！
-                current_speed = 1.0
-                current_vol = 1.0
+                block = {"type": "speech", "text": clean}
+                if pending_multiplier:
+                    block["multiplier"] = pending_multiplier
+                    pending_multiplier = None
+                if token.get("paragraph_start"):
+                    block["paragraph_start"] = True
+                blocks.append(block)
 
-    # 3. 合成与拼接
+    # 3. 应用韵律弧线
+    blocks = apply_curve_to_blocks(blocks, curve)
+
+    # 4. 合成与拼接
     audio_clips, temp_files, subtitles_info = [], [], []
     current_time = 0.0
-    
+
     for i, block in enumerate(blocks):
-        if block["type"] == "pure_break":
+        if block["type"] in ("pure_break", "auto_pause"):
             sec = block["sec"]
-            console.print(f"  ⏸️ 独立留白: '{block['raw']}' ({sec:.2f}s)")
+            label = "弧线停顿" if block["type"] == "auto_pause" else f"留白: '{block.get('raw', '')}'"
+            console.print(f"  [dim]  {label} ({sec:.2f}s)[/dim]")
             sr = 44100
             audio_clips.append(AudioArrayClip(np.zeros((int(sr * sec), 2)), fps=sr))
             current_time += sec
             continue
 
+        if block["type"] != "speech":
+            continue
+
         sub_text_clean = block["text"]
-        speed = block["speed"]
-        vol = block["vol"]
-        
-        console.print(f"  🎙️ [速:{speed}, 音:{vol}]: {sub_text_clean[:15]}...")
+        speed = block.get("speed", 0.8)
+        vol = block.get("vol", 1.0)
+        progress = block.get("progress", 0.0)
+
+        console.print(f"  [速:{speed:.2f}, 音:{vol:.2f}, 进度:{progress:.0%}]: {sub_text_clean[:18]}...")
         temp_path = os.path.join(output_dir, f"temp_voice_{i}.mp3")
 
         try:
             if use_pro_voice:
-                # 仅传文本和 speed 参数，完全避开 SSML 坑
                 await _synthesize_cosyvoice(sub_text_clean, temp_path, speed=speed)
             else:
                 await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate="-10%").save(temp_path)
         except Exception as e:
-            console.print(f"[red]  ❌ 语音合成失败，跳过该句: {e}[/red]")
+            console.print(f"[red]  语音合成失败，跳过该句: {e}[/red]")
             continue
 
         try:
             clip = AudioFileClip(temp_path)
-            
-            # 【物理降维打击】：压低音量
+
             if vol < 1.0:
-                clip = clip.volumex(vol) 
-                
-            # ==========================================
-            # 🎧 【核心听觉修复：消除数字硬切】
-            # ==========================================
-            # 根据这段音频的长短，动态计算淡入淡出时间
-            # 极短的淡入(0.1s)消除起爆音，舒缓的淡出(0.4s)保留呼吸尾音
-            fade_in_time = min(0.1, clip.duration / 3)
-            fade_out_time = min(0.4, clip.duration / 3)
-            
+                clip = clip.volumex(vol)
+
+            # fade 曲线随进度增大：越靠后越柔和
+            fade_in_time = min(0.05 + 0.15 * progress, clip.duration / 3)
+            fade_out_time = min(0.2 + 0.6 * progress, clip.duration / 3)
+
             clip = clip.fx(audio_fadein, fade_in_time).fx(audio_fadeout, fade_out_time)
-            # ==========================================
-                
+
             audio_clips.append(clip)
             temp_files.append(temp_path)
             subtitles_info.append({"text": sub_text_clean, "start": current_time, "duration": clip.duration})
             current_time += clip.duration
         except Exception as e:
-            console.print(f"[red]  ❌ 读取音频片段失败: {e}[/red]")
+            console.print(f"[red]  读取音频片段失败: {e}[/red]")
             continue
 
     if not audio_clips:
-        console.print("[bold red]❌ 严重错误：剧本中没有提取到任何有效语音！[/bold red]")
+        console.print("[bold red]严重错误：剧本中没有提取到任何有效语音！[/bold red]")
         return None, []
-        
+
     console.print("  -> 正在拼接音频时间轴...")
     final_audio = concatenate_audioclips(audio_clips)
     final_audio.write_audiofile(voice_path, logger=None)
-    
-    for c in audio_clips: c.close()
+
+    for c in audio_clips:
+        c.close()
     for tf in temp_files:
-        try: os.remove(tf)
-        except: pass
+        try:
+            os.remove(tf)
+        except OSError:
+            pass
     return voice_path, subtitles_info
 
 # ==========================================
