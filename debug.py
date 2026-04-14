@@ -1,6 +1,7 @@
 # debug.py
 import asyncio
 import os
+import sys
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel

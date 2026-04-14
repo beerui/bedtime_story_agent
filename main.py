@@ -8,10 +8,29 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel
 
-from config import THEMES, SKIP_FINAL_VIDEO_RENDER
+from config import THEMES, SKIP_FINAL_VIDEO_RENDER, API_CONFIG
 import engine
 
 console = Console()
+
+
+def _check_api_keys():
+    """启动前校验必需的 API key，缺失时给出明确提示。"""
+    key = (API_CONFIG.get("proxy_api_key") or "").strip()
+    if not key:
+        console.print(
+            "[bold red]错误：未检测到任何 API Key。[/bold red]\n"
+            "请在项目根目录的 .env 文件中填写 DASHSCOPE_API_KEY（推荐，一个 key 覆盖全部功能）。\n"
+            "申请地址：https://dashscope.console.aliyun.com/\n"
+            "参考 .env.example 中的格式。"
+        )
+        return False
+    tts_key = (API_CONFIG.get("cosyvoice_api_key") or "").strip()
+    if not tts_key:
+        console.print(
+            "[yellow]提示：语音 API Key 未配置，语音将使用免费的 edge-tts 降级方案。[/yellow]"
+        )
+    return True
 
 async def process_story_and_audio(selected_theme, output_dir, target_words):
     story = await asyncio.to_thread(engine.generate_story, selected_theme, output_dir, target_words)
@@ -119,7 +138,9 @@ async def interactive_main():
 if __name__ == "__main__":
     import moviepy
     if int(moviepy.__version__.split('.')[0]) >= 2:
-        console.print("[bold red]严重错误：检测到 moviepy 版本 >= 2.0。[/bold red]")
+        console.print("[bold red]严重错误：检测到 moviepy 版本 >= 2.0。请安装 moviepy<2.0。[/bold red]")
+    elif not _check_api_keys():
+        sys.exit(1)
     else:
         try:
             asyncio.run(interactive_main())

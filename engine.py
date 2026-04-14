@@ -197,8 +197,13 @@ def generate_custom_theme(user_idea):
         "「文案设定」需写成适合口播的设定，并在设定中体现会在成稿里使用的 [环境音：]、[停顿] 等节奏设计。\n"
         "严格按3行格式输出：\n主题名：\n文案设定：\n画面提示词：(英文，包含 cinematic vertical view, relaxing)\n"
     )
-    response = text_client.chat.completions.create(model=API_CONFIG["text_model"], messages=[{"role": "user", "content": prompt}], stream=False)
-    result_text = response.choices[0].message.content.strip()
+    try:
+        response = text_client.chat.completions.create(model=API_CONFIG["text_model"], messages=[{"role": "user", "content": prompt}], stream=False)
+        result_text = response.choices[0].message.content.strip()
+    except Exception as e:
+        console.print(f"[bold red]文本生成 API 调用失败: {e}[/bold red]")
+        console.print("[dim]请检查 .env 中的 PROXY_API_KEY 和 PROXY_BASE_URL 是否正确。[/dim]")
+        raise SystemExit(1)
     
     new_theme_name, new_story_prompt, new_image_prompt = "未命名自定义主题", f"关于{user_idea}的场景。要求温柔舒缓。", f"A cinematic vertical view of {user_idea}, relaxing, highly detailed, 4k."
     for line in result_text.split('\n'):
@@ -248,43 +253,46 @@ def generate_story(theme_name, output_dir, target_words):
     theme_info = THEMES[theme_name]
     theme_brief = theme_info.get("story_prompt", "")
     spec = TTS_SCRIPT_DIRECTIVE
-    outline = text_client.chat.completions.create(
-        model=API_CONFIG["text_model"],
-        messages=[{"role": "user", "content": (
-            f"你是睡眠冥想心理学家。主题【{theme_name}】。\n"
-            f"主题氛围要求：{theme_brief}\n\n{spec}\n\n"
-            "请写「三段式心理暗示大纲」，明确标注 [阶段：引入]、[阶段：深入]、[阶段：尾声] 三个阶段的分界。"
-            "大纲里标注计划在何处用 [环境音：] 与 [停顿]。"
-        )}],
-        stream=False,
-    ).choices[0].message.content
-    draft = text_client.chat.completions.create(
-        model=API_CONFIG["text_model"],
-        messages=[{"role": "user", "content": (
-            f"你是深夜电台主播，声音要慢、稳、催眠感。\n{spec}\n\n"
-            f"根据大纲扩写成完整口播稿（约 {target_words} 字量级）：\n{outline}\n\n"
-            "要求：\n"
-            "1) 必须在正文对应位置保留 [阶段：引入]、[阶段：深入]、[阶段：尾声] 标记。\n"
-            "2) 必须实际写出 [环境音：…]、[停顿] 或 [停顿500ms]/[停顿1s] 等标记，位置要自然。\n"
-            "3) 禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。"
-        )}],
-        stream=False,
-    ).choices[0].message.content
-    final_story = text_client.chat.completions.create(
-        model=API_CONFIG["text_model"],
-        messages=[{"role": "user", "content": (
-            f"你是严苛主编：去掉 AI 腔与说教感，增强电影感与感官描写。\n{spec}\n\n"
-            "保留初稿中所有 [阶段：]、[环境音：]、[停顿…]、[慢速]、[轻声]、[极弱] 标记，不得删除或改成自然语言描述；可微调措辞与标点。\n\n"
-            "【禁止清单】：\n"
-            "- 排比不超过两组\n"
-            "- 不以反问句结尾\n"
-            "- 禁止「让我们」「我们一起」等集体感措辞\n"
-            "- 禁止「你有没有想过」「其实」等说教开头\n"
-            "- 每段至少一个具体感官细节（触觉/嗅觉/温度/声音质感）\n\n"
-            f"初稿：\n{draft}"
-        )}],
-        stream=False,
-    ).choices[0].message.content
+
+    def _llm_call(prompt_text, step_name):
+        try:
+            return text_client.chat.completions.create(
+                model=API_CONFIG["text_model"],
+                messages=[{"role": "user", "content": prompt_text}],
+                stream=False,
+            ).choices[0].message.content
+        except Exception as e:
+            console.print(f"[bold red]剧本生成第 {step_name} 步 API 调用失败: {e}[/bold red]")
+            raise
+
+    outline = _llm_call(
+        f"你是睡眠冥想心理学家。主题【{theme_name}】。\n"
+        f"主题氛围要求：{theme_brief}\n\n{spec}\n\n"
+        "请写「三段式心理暗示大纲」，明确标注 [阶段：引入]、[阶段：深入]、[阶段：尾声] 三个阶段的分界。"
+        "大纲里标注计划在何处用 [环境音：] 与 [停顿]。",
+        "1/大纲",
+    )
+    draft = _llm_call(
+        f"你是深夜电台主播，声音要慢、稳、催眠感。\n{spec}\n\n"
+        f"根据大纲扩写成完整口播稿（约 {target_words} 字量级）：\n{outline}\n\n"
+        "要求：\n"
+        "1) 必须在正文对应位置保留 [阶段：引入]、[阶段：深入]、[阶段：尾声] 标记。\n"
+        "2) 必须实际写出 [环境音：…]、[停顿] 或 [停顿500ms]/[停顿1s] 等标记，位置要自然。\n"
+        "3) 禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。",
+        "2/扩写",
+    )
+    final_story = _llm_call(
+        f"你是严苛主编：去掉 AI 腔与说教感，增强电影感与感官描写。\n{spec}\n\n"
+        "保留初稿中所有 [阶段：]、[环境音：]、[停顿…]、[慢速]、[轻声]、[极弱] 标记，不得删除或改成自然语言描述；可微调措辞与标点。\n\n"
+        "【禁止清单】：\n"
+        "- 排比不超过两组\n"
+        "- 不以反问句结尾\n"
+        "- 禁止「让我们」「我们一起」等集体感措辞\n"
+        "- 禁止「你有没有想过」「其实」等说教开头\n"
+        "- 每段至少一个具体感官细节（触觉/嗅觉/温度/声音质感）\n\n"
+        f"初稿：\n{draft}",
+        "3/润色",
+    )
 
     with open(text_path, "w", encoding="utf-8") as f: f.write(final_story)
     return final_story
@@ -478,6 +486,50 @@ async def generate_audio(text, output_dir):
         except OSError:
             pass
     return voice_path, subtitles_info
+
+
+# ==========================================
+# 模块：成品音频混音（语音 + BGM → 可直接发布的 MP3）
+# ==========================================
+def mix_final_audio(voice_path, bgm_filename, output_dir, fade_in=5, fade_out=10, bgm_vol=0.25):
+    """将配音和 BGM 混合为一个可发布的成品音频文件。"""
+    final_path = os.path.join(output_dir, "final_audio.mp3")
+    if os.path.exists(final_path):
+        console.print(f"[dim]  成品音频已存在，跳过混音: {final_path}[/dim]")
+        return final_path
+
+    console.print("\n[bold cyan][混音车间] 正在合成成品音频...[/bold cyan]")
+    voice_clip = AudioFileClip(voice_path)
+    total_dur = voice_clip.duration + 4  # 留 4 秒尾部静音渐出
+
+    # 加载 BGM
+    bgm_path = f"assets/{bgm_filename}" if bgm_filename else None
+    if bgm_path and os.path.exists(bgm_path):
+        bgm_clip = AudioFileClip(bgm_path)
+        console.print(f"  BGM: {bgm_filename}")
+    else:
+        # 降级：生成柔和噪声作为底噪
+        noise_path = "assets/auto_generated_noise.mp3"
+        if not os.path.exists(noise_path):
+            generate_soothing_noise(noise_path, 60)
+        bgm_clip = AudioFileClip(noise_path)
+        console.print("  BGM: 自动生成柔和底噪")
+
+    looped_bgm = audio_loop(bgm_clip, duration=total_dur)
+    looped_bgm = looped_bgm.volumex(bgm_vol)
+    looped_bgm = looped_bgm.fx(audio_fadein, fade_in).fx(audio_fadeout, fade_out)
+
+    # 语音从第 2 秒开始（留 BGM 前奏）
+    final_audio = CompositeAudioClip([looped_bgm, voice_clip.set_start(2)])
+    final_audio.fps = voice_clip.fps or 44100
+    final_audio.write_audiofile(final_path, logger=None)
+
+    voice_clip.close()
+    bgm_clip.close()
+
+    size_mb = os.path.getsize(final_path) / 1024 / 1024
+    console.print(f"  [green]成品音频: {final_path} ({size_mb:.1f}MB)[/green]")
+    return final_path
 
 # ==========================================
 # 模块：图生图底图生成器 (修改为：只生成1张图片)

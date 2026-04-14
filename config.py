@@ -23,20 +23,40 @@ def _load_local_env(env_path=".env"):
 
 _load_local_env()
 
+# DashScope 是国内服务，代理（尤其 SOCKS）会导致 WebSocket/SSL 错误。
+# 如果目标 API 是 DashScope，清除代理环境变量。
+_base_url = os.getenv("PROXY_BASE_URL", "dashscope.aliyuncs.com")
+if "dashscope" in _base_url:
+    for _pvar in ("http_proxy", "https_proxy", "all_proxy",
+                  "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        os.environ.pop(_pvar, None)
+
+# macOS Python SSL 证书修复：使用 certifi 的 CA bundle
+try:
+    import certifi
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    os.environ.setdefault("WEBSOCKET_CLIENT_CA_BUNDLE", certifi.where())
+except ImportError:
+    pass
+
 # ==========================================
 # 1. API 接口与模型配置（敏感信息全部从 .env 读取）
 # ==========================================
+# 统一使用阿里云 DashScope：一个 API key 同时覆盖文本(Qwen)、语音(CosyVoice)、视频(Wan2.x)
+_dashscope_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+
 API_CONFIG = {
-    # 你的代理接口配置 (用于生成故事文本)
-    "proxy_api_key": os.getenv("PROXY_API_KEY", "").strip(),
+    # 文本生成：优先使用独立配置，否则自动复用 DashScope key + Qwen
+    "proxy_api_key": os.getenv("PROXY_API_KEY", "").strip() or _dashscope_key,
     "proxy_base_url": os.getenv(
-        "PROXY_BASE_URL", "https://open-ai-anthropic-api--motou2021.replit.app/v1"
+        "PROXY_BASE_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
     ).strip(),
-    "text_model": os.getenv("TEXT_MODEL", "claude-haiku-4-5").strip(),
+    "text_model": os.getenv("TEXT_MODEL", "qwen-plus").strip(),
     # 官方 OpenAI 配置 (用于生成图像)
     "image_api_key": os.getenv("IMAGE_API_KEY", "").strip(),
-    # 阿里云 DashScope - CosyVoice
-    "cosyvoice_api_key": os.getenv("COSYVOICE_API_KEY", "").strip(),
+    # 阿里云 DashScope - CosyVoice / Wan2.x 视频
+    "cosyvoice_api_key": os.getenv("COSYVOICE_API_KEY", "").strip() or _dashscope_key,
     # 推荐音色：longxiaochun / longfeiye / longyue_v3 等
     "tts_voice": os.getenv("TTS_VOICE", "longyue_v3").strip(),
     # [环境音：…] 在音轨上插入的静音秒数（后期可叠真实环境声）
