@@ -249,7 +249,7 @@ def select_best_bgm(theme_name):
 # ==========================================
 # 模块：多 Agent 深度剧本引擎
 # ==========================================
-def generate_story(theme_name, output_dir, target_words):
+def generate_story(theme_name, output_dir, target_words, extra_prompt=""):
     text_path = os.path.join(output_dir, "story_draft.txt")
     if os.path.exists(text_path):
         with open(text_path, "r", encoding="utf-8") as f: return f.read()
@@ -273,7 +273,7 @@ def generate_story(theme_name, output_dir, target_words):
         f"你是睡眠冥想心理学家。主题【{theme_name}】。\n"
         f"主题氛围要求：{theme_brief}\n\n{spec}\n\n"
         "请写「三段式心理暗示大纲」，明确标注 [阶段：引入]、[阶段：深入]、[阶段：尾声] 三个阶段的分界。"
-        "大纲里标注计划在何处用 [环境音：] 与 [停顿]。",
+        f"大纲里标注计划在何处用 [环境音：] 与 [停顿]。{extra_prompt}",
         "1/大纲",
     )
     draft = _llm_call(
@@ -664,6 +664,51 @@ def normalize_audio_loudness(audio_path, target_lufs=-16.0):
         normalized.close()
     except Exception as e:
         console.print(f"  [yellow]响度归一化跳过: {e}[/yellow]")
+
+
+def validate_output(output_dir):
+    """校验一期内容的完整性和质量，返回 (ok, issues_list)。"""
+    issues = []
+
+    # 检查必须存在的文件
+    required = ["story_draft.txt", "voice.mp3", "final_audio.mp3"]
+    for f in required:
+        path = os.path.join(output_dir, f)
+        if not os.path.isfile(path):
+            issues.append(f"缺失文件: {f}")
+        elif os.path.getsize(path) == 0:
+            issues.append(f"空文件: {f}")
+
+    # 检查成品音频时长和大小
+    final = os.path.join(output_dir, "final_audio.mp3")
+    if os.path.isfile(final) and os.path.getsize(final) > 0:
+        try:
+            clip = AudioFileClip(final)
+            dur = clip.duration
+            clip.close()
+            if dur < 30:
+                issues.append(f"音频过短: {dur:.0f}s (最低 30s)")
+            size_mb = os.path.getsize(final) / 1024 / 1024
+            if size_mb > 50:
+                issues.append(f"文件过大: {size_mb:.1f}MB (上限 50MB)")
+        except Exception as e:
+            issues.append(f"音频无法读取: {e}")
+
+    # 检查剧本是否包含阶段标记
+    draft = os.path.join(output_dir, "story_draft.txt")
+    if os.path.isfile(draft):
+        with open(draft, "r", encoding="utf-8") as f:
+            text = f.read()
+        if "[阶段：" not in text and "【阶段：" not in text:
+            issues.append("剧本缺少阶段标记")
+
+    ok = len(issues) == 0
+    if ok:
+        console.print(f"  [green]质量校验通过[/green]")
+    else:
+        for iss in issues:
+            console.print(f"  [red]校验问题: {iss}[/red]")
+    return ok, issues
 
 
 import json

@@ -45,7 +45,7 @@ def _check_api_key():
         sys.exit(1)
 
 
-async def produce_one(theme_name, output_dir, target_words, audio_only=False, dedup=None):
+async def produce_one(theme_name, output_dir, target_words, audio_only=False, dedup=None, episode=None):
     """生产单期内容，返回结果摘要 dict。"""
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs("assets", exist_ok=True)
@@ -53,9 +53,12 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False, de
     t0 = time.time()
 
     try:
-        # 1. 剧本
+        # 1. 剧本（系列模式下注入集数约束）
+        extra_prompt = ""
+        if episode:
+            extra_prompt = f"\n这是【{theme_name}】系列的第 {episode} 夜。请与前几期采用不同的切入角度、不同的感官细节、不同的情绪弧线。不要重复相似的开头和结尾方式。"
         story = await asyncio.to_thread(
-            engine.generate_story, theme_name, output_dir, target_words
+            engine.generate_story, theme_name, output_dir, target_words, extra_prompt=extra_prompt
         )
         result["story_len"] = len(story)
 
@@ -104,6 +107,11 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False, de
                 engine.generate_and_crop_cover, theme_name, output_dir
             )
 
+        # 7. 质量校验
+        ok, issues = engine.validate_output(output_dir)
+        if not ok:
+            result["quality_issues"] = issues
+
     except Exception as e:
         result["status"] = f"FAIL: {e}"
 
@@ -127,6 +135,17 @@ async def batch_main(args):
     else:
         all_themes = list(THEMES.keys())
         themes = random.sample(all_themes, min(args.count, len(all_themes)))
+
+    # 系列模式：同一主题展开为多期
+    if args.series > 1:
+        base_themes = themes[:]
+        themes = []
+        for t in base_themes:
+            for ep in range(1, args.series + 1):
+                themes.append((t, ep))
+        console.print(f"[dim]系列模式: {len(base_themes)} 个主题 × {args.series} 期 = {len(themes)} 期[/dim]")
+    else:
+        themes = [(t, None) for t in themes]
 
     if not themes:
         console.print("[red]没有可用的主题[/red]")
@@ -152,16 +171,23 @@ async def batch_main(args):
     sem = asyncio.Semaphore(concurrency)
     results = [None] * len(themes)
 
-    async def _produce_with_sem(idx, theme):
+    async def _produce_with_sem(idx, theme_ep):
+        theme_name, episode = theme_ep
+        label = f"{theme_name} 第{episode}夜" if episode else theme_name
         async with sem:
             console.print(
                 f"\n{'=' * 60}\n"
-                f"[bold cyan]  [{idx+1}/{len(themes)}] 正在生产：{theme}[/bold cyan]\n"
+                f"[bold cyan]  [{idx+1}/{len(themes)}] 正在生产：{label}[/bold cyan]\n"
                 f"{'=' * 60}"
             )
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = f"outputs/Batch_{ts}_{theme}"
-            results[idx] = await produce_one(theme, output_dir, args.words, args.audio_only, dedup=dedup)
+            ep_suffix = f"_EP{episode}" if episode else ""
+            output_dir = f"outputs/Batch_{ts}_{theme_name}{ep_suffix}"
+            results[idx] = await produce_one(
+                theme_name, output_dir, args.words, args.audio_only,
+                dedup=dedup, episode=episode,
+            )
+            results[idx]["label"] = label
 
     await asyncio.gather(*[_produce_with_sem(i, t) for i, t in enumerate(themes)])
 
@@ -180,7 +206,7 @@ async def batch_main(args):
         dedup_warn = r.get("dedup_warning", "")
         dedup_cell = f"[yellow]{dedup_warn}[/yellow]" if dedup_warn else "[green]OK[/green]"
         table.add_row(
-            r["theme"],
+            r.get("label", r["theme"]),
             f"[{status_style}]{r['status']}[/{status_style}]",
             r.get("title", "-"),
             str(r.get("story_len", "-")),
@@ -215,6 +241,9 @@ def main():
     )
     parser.add_argument(
         "--parallel", type=int, default=1, help="并发生产数（默认 1，建议不超过 3）"
+    )
+    parser.add_argument(
+        "--series", type=int, default=1, help="系列模式：每个主题生成 N 期不同内容（如 --series 5 生成第1-5夜）"
     )
     args = parser.parse_args()
 
