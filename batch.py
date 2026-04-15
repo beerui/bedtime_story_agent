@@ -145,17 +145,25 @@ async def batch_main(args):
     if dedup.corpus_size > 0:
         console.print(f"[dim]去重语料库: {dedup.corpus_size} 篇已有内容[/dim]")
 
-    results = []
-    for i, theme in enumerate(themes):
-        console.print(
-            f"\n{'=' * 60}\n"
-            f"[bold cyan]  [{i+1}/{len(themes)}] 正在生产：{theme}[/bold cyan]\n"
-            f"{'=' * 60}"
-        )
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = f"outputs/Batch_{ts}_{theme}"
-        result = await produce_one(theme, output_dir, args.words, args.audio_only, dedup=dedup)
-        results.append(result)
+    concurrency = min(args.parallel, len(themes))
+    if concurrency > 1:
+        console.print(f"[dim]并发数: {concurrency}[/dim]")
+
+    sem = asyncio.Semaphore(concurrency)
+    results = [None] * len(themes)
+
+    async def _produce_with_sem(idx, theme):
+        async with sem:
+            console.print(
+                f"\n{'=' * 60}\n"
+                f"[bold cyan]  [{idx+1}/{len(themes)}] 正在生产：{theme}[/bold cyan]\n"
+                f"{'=' * 60}"
+            )
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = f"outputs/Batch_{ts}_{theme}"
+            results[idx] = await produce_one(theme, output_dir, args.words, args.audio_only, dedup=dedup)
+
+    await asyncio.gather(*[_produce_with_sem(i, t) for i, t in enumerate(themes)])
 
     # 汇总报告
     console.print(f"\n{'=' * 60}")
@@ -204,6 +212,9 @@ def main():
     )
     parser.add_argument(
         "--audio-only", action="store_true", help="纯音频模式（跳过图片/视频/封面）"
+    )
+    parser.add_argument(
+        "--parallel", type=int, default=1, help="并发生产数（默认 1，建议不超过 3）"
     )
     args = parser.parse_args()
 
