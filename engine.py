@@ -477,6 +477,7 @@ async def generate_audio(text, output_dir):
     # 4. 合成与拼接
     audio_clips, temp_files, subtitles_info = [], [], []
     current_time = 0.0
+    cosyvoice_disabled = False  # CosyVoice 额度耗尽后全局切换
 
     for i, block in enumerate(blocks):
         if block["type"] in ("pure_break", "auto_pause"):
@@ -499,15 +500,23 @@ async def generate_audio(text, output_dir):
         console.print(f"  [速:{speed:.2f}, 音:{vol:.2f}, 进度:{progress:.0%}]: {sub_text_clean[:18]}...")
         temp_path = os.path.join(output_dir, f"temp_voice_{i}.mp3")
 
+        # edge-tts rate 映射：speed 0.5→"-50%", 1.0→"+0%", 0.8→"-20%"
+        edge_rate = f"{int((speed - 1.0) * 100):+d}%"
+
         try:
-            if use_pro_voice:
+            if use_pro_voice and not cosyvoice_disabled:
                 try:
                     await _synthesize_cosyvoice(sub_text_clean, temp_path, speed=speed)
                 except Exception as cosyvoice_err:
-                    console.print(f"[yellow]  CosyVoice 失败，降级 edge-tts: {cosyvoice_err}[/yellow]")
-                    await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate="-10%").save(temp_path)
+                    err_str = str(cosyvoice_err)
+                    if "AllocationQuota" in err_str or "FreeTierOnly" in err_str:
+                        console.print(f"[yellow]  CosyVoice 额度耗尽，全局切换 edge-tts[/yellow]")
+                        cosyvoice_disabled = True
+                    else:
+                        console.print(f"[yellow]  CosyVoice 失败，降级 edge-tts[/yellow]")
+                    await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate=edge_rate).save(temp_path)
             else:
-                await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate="-10%").save(temp_path)
+                await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate=edge_rate).save(temp_path)
         except Exception as e:
             console.print(f"[red]  语音合成失败，跳过该句: {e}[/red]")
             continue
