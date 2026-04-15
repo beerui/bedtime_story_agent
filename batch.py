@@ -30,6 +30,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from config import THEMES, API_CONFIG
+from dedup import ContentDedup
 import engine
 
 console = Console()
@@ -44,7 +45,7 @@ def _check_api_key():
         sys.exit(1)
 
 
-async def produce_one(theme_name, output_dir, target_words, audio_only=False):
+async def produce_one(theme_name, output_dir, target_words, audio_only=False, dedup=None):
     """生产单期内容，返回结果摘要 dict。"""
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs("assets", exist_ok=True)
@@ -57,6 +58,14 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False):
             engine.generate_story, theme_name, output_dir, target_words
         )
         result["story_len"] = len(story)
+
+        # 1b. 去重检查
+        if dedup:
+            is_dup, sim, match = dedup.check(story)
+            if is_dup:
+                console.print(f"  [yellow]与 {match} 相似度 {sim:.0%}，标记重复[/yellow]")
+                result["dedup_warning"] = f"与 {match} 相似 {sim:.0%}"
+            dedup.add(os.path.basename(output_dir), story)
 
         # 2. 语音 + BGM（并行）
         task_audio = engine.generate_audio(story, output_dir)
@@ -132,6 +141,10 @@ async def batch_main(args):
         )
     )
 
+    dedup = ContentDedup("outputs")
+    if dedup.corpus_size > 0:
+        console.print(f"[dim]去重语料库: {dedup.corpus_size} 篇已有内容[/dim]")
+
     results = []
     for i, theme in enumerate(themes):
         console.print(
@@ -141,7 +154,7 @@ async def batch_main(args):
         )
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"outputs/Batch_{ts}_{theme}"
-        result = await produce_one(theme, output_dir, args.words, args.audio_only)
+        result = await produce_one(theme, output_dir, args.words, args.audio_only, dedup=dedup)
         results.append(result)
 
     # 汇总报告
@@ -151,15 +164,19 @@ async def batch_main(args):
     table.add_column("状态")
     table.add_column("发布标题")
     table.add_column("字数", justify="right")
+    table.add_column("去重", justify="center")
     table.add_column("耗时", justify="right")
 
     for r in results:
         status_style = "green" if r["status"] == "OK" else "red"
+        dedup_warn = r.get("dedup_warning", "")
+        dedup_cell = f"[yellow]{dedup_warn}[/yellow]" if dedup_warn else "[green]OK[/green]"
         table.add_row(
             r["theme"],
             f"[{status_style}]{r['status']}[/{status_style}]",
             r.get("title", "-"),
             str(r.get("story_len", "-")),
+            dedup_cell,
             f"{r.get('duration_sec', 0):.0f}s",
         )
 

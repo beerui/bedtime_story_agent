@@ -294,8 +294,63 @@ def generate_story(theme_name, output_dir, target_words):
         "3/润色",
     )
 
+    # 质量评估 + 低分自动重写（最多重试 1 次）
+    score, feedback = _evaluate_story(final_story, theme_name)
+    if score < 70:
+        console.print(f"[yellow]  剧本评分 {score}/100 低于阈值，启动重写...[/yellow]")
+        console.print(f"  [dim]反馈: {feedback}[/dim]")
+        final_story = _llm_call(
+            f"你是严苛主编。以下剧本评分偏低，请根据反馈修改。\n{spec}\n\n"
+            f"【评审反馈】：\n{feedback}\n\n"
+            "保留所有 [阶段：]、[环境音：]、[停顿…]、[慢速]、[轻声]、[极弱] 标记。\n\n"
+            f"原稿：\n{final_story}",
+            "4/重写",
+        )
+        score2, _ = _evaluate_story(final_story, theme_name)
+        console.print(f"  重写后评分: {score2}/100")
+    else:
+        console.print(f"  [green]剧本评分: {score}/100[/green]")
+
     with open(text_path, "w", encoding="utf-8") as f: f.write(final_story)
     return final_story
+
+
+def _evaluate_story(story_text, theme_name):
+    """用 LLM 对剧本做催眠质量评分，返回 (score, feedback)。"""
+    prompt = (
+        f"你是助眠内容质量审核专家。请对以下【{theme_name}】主题的助眠剧本做评估。\n\n"
+        "评分维度（每项 0-25 分，满分 100）：\n"
+        "1) 催眠感：语言节奏是否越来越慢、是否有渐进式放松引导\n"
+        "2) 感官描写：是否有具体的触觉/嗅觉/温度/声音质感描写\n"
+        "3) 节奏标记：[停顿]、[环境音]、[慢速]、[极弱] 等标记使用是否自然且渐进\n"
+        "4) 去AI腔：是否避免了排比、说教、集体措辞等 AI 痕迹\n\n"
+        "严格按以下格式输出，不要输出其他内容：\n"
+        "总分：XX\n"
+        "反馈：一句话改进建议\n\n"
+        f"剧本：\n{story_text[:1500]}"
+    )
+    try:
+        response = text_client.chat.completions.create(
+            model=API_CONFIG["text_model"],
+            messages=[{"role": "user", "content": prompt}],
+            stream=False,
+        )
+        raw = response.choices[0].message.content.strip()
+        # 解析分数
+        score = 75  # 默认
+        feedback = ""
+        for line in raw.split("\n"):
+            line = line.strip()
+            if "总分" in line:
+                import re as _re
+                m = _re.search(r"(\d+)", line)
+                if m:
+                    score = min(100, max(0, int(m.group(1))))
+            elif "反馈" in line:
+                feedback = line.split("：", 1)[-1].split(":", 1)[-1].strip()
+        return score, feedback
+    except Exception:
+        return 75, ""  # API 失败不阻塞流程
 
 def generate_soothing_noise(output_path, duration=60):
     sr = 44100  
