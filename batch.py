@@ -68,7 +68,7 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False, de
             dedup.add(os.path.basename(output_dir), story)
 
         # 2. 语音 + BGM（并行）
-        task_audio = engine.generate_audio(story, output_dir)
+        task_audio = engine.generate_audio(story, output_dir, theme_name=theme_name)
         task_bgm = asyncio.to_thread(engine.select_best_bgm, theme_name)
         (voice_file, subs), bgm_file = await asyncio.gather(task_audio, task_bgm)
 

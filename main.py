@@ -34,7 +34,7 @@ def _check_api_keys():
 
 async def process_story_and_audio(selected_theme, output_dir, target_words):
     story = await asyncio.to_thread(engine.generate_story, selected_theme, output_dir, target_words)
-    voice_file, subtitles_info = await engine.generate_audio(story, output_dir)
+    voice_file, subtitles_info = await engine.generate_audio(story, output_dir, theme_name=selected_theme)
     return voice_file, subtitles_info
 
 async def process_images_and_videos(selected_theme, output_dir):

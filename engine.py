@@ -25,7 +25,11 @@ import moviepy.video.fx.all as vfx
 from rich.console import Console
 from rich.panel import Panel
 
-from config import API_CONFIG, PROTAGONIST, THEMES, TTS_SCRIPT_DIRECTIVE, PROSODY_CURVES, CURRENT_PROSODY_CURVE
+from config import (
+    API_CONFIG, PROTAGONIST, THEMES, TTS_SCRIPT_DIRECTIVE,
+    PROSODY_CURVES, CURRENT_PROSODY_CURVE,
+    EDGE_TTS_DEFAULT, THEME_VOICE_MAP,
+)
 import dashscope
 from dashscope.audio.tts_v2 import SpeechSynthesizer
 from prosody import (
@@ -400,11 +404,14 @@ async def _synthesize_cosyvoice(text, output_path, speed=0.8):
     # 包装为异步防止阻塞
     await asyncio.to_thread(run_sdk)
 
-async def generate_audio(text, output_dir):
+async def generate_audio(text, output_dir, theme_name=None):
     voice_path = os.path.join(output_dir, "voice.mp3")
     console.print("\n[bold cyan][音频车间] 韵律弧线引擎启动 (Prosody Curve + 物理混音)...[/bold cyan]")
 
     use_pro_voice = bool(API_CONFIG.get("cosyvoice_api_key", "").strip())
+    edge_voice = THEME_VOICE_MAP.get(theme_name, EDGE_TTS_DEFAULT) if theme_name else EDGE_TTS_DEFAULT
+    if not use_pro_voice:
+        console.print(f"  [dim]edge-tts 音色: {edge_voice}[/dim]")
     curve = ProsodyCurve(PROSODY_CURVES[CURRENT_PROSODY_CURVE])
 
     # 1. 词法解析
@@ -514,9 +521,9 @@ async def generate_audio(text, output_dir):
                         cosyvoice_disabled = True
                     else:
                         console.print(f"[yellow]  CosyVoice 失败，降级 edge-tts[/yellow]")
-                    await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate=edge_rate).save(temp_path)
+                    await edge_tts.Communicate(sub_text_clean, edge_voice, rate=edge_rate).save(temp_path)
             else:
-                await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate=edge_rate).save(temp_path)
+                await edge_tts.Communicate(sub_text_clean, edge_voice, rate=edge_rate).save(temp_path)
         except Exception as e:
             console.print(f"[red]  语音合成失败，跳过该句: {e}[/red]")
             continue
@@ -556,7 +563,36 @@ async def generate_audio(text, output_dir):
             os.remove(tf)
         except OSError:
             pass
+
+    # 导出 SRT 字幕
+    if subtitles_info:
+        _export_srt(subtitles_info, os.path.join(output_dir, "subtitles.srt"))
+
     return voice_path, subtitles_info
+
+
+def _export_srt(subtitles_info, srt_path):
+    """将 subtitles_info 导出为标准 SRT 字幕文件。"""
+    def _fmt_ts(seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        ms = int((seconds % 1) * 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    lines = []
+    for i, sub in enumerate(subtitles_info, 1):
+        start = sub["start"]
+        end = start + sub["duration"]
+        text = sub["text"].strip()
+        lines.append(f"{i}")
+        lines.append(f"{_fmt_ts(start)} --> {_fmt_ts(end)}")
+        lines.append(text)
+        lines.append("")
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    console.print(f"  [dim]字幕: {srt_path} ({len(subtitles_info)} 条)[/dim]")
 
 
 # ==========================================

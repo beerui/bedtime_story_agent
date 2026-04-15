@@ -74,6 +74,24 @@ SKIP_FINAL_VIDEO_RENDER = os.getenv("SKIP_FINAL_VIDEO_RENDER", "true").lower() i
     "on",
 )
 
+# edge-tts 中文音色表（CosyVoice 不可用时的降级选择）
+EDGE_TTS_VOICES = {
+    "female_gentle": "zh-CN-XiaoxiaoNeural",      # 女声，温柔（默认）
+    "female_warm": "zh-CN-XiaoyiNeural",           # 女声，温暖
+    "male_calm": "zh-CN-YunxiNeural",              # 男声，沉稳
+    "male_deep": "zh-CN-YunjianNeural",            # 男声，低沉
+}
+EDGE_TTS_DEFAULT = os.getenv("EDGE_TTS_VOICE", "zh-CN-XiaoxiaoNeural").strip()
+
+# 主题到推荐音色的映射（未列出的主题使用 EDGE_TTS_DEFAULT）
+THEME_VOICE_MAP = {
+    "末班地铁_卸下伪装": "zh-CN-YunxiNeural",
+    "天台吹风_人际抽离": "zh-CN-YunxiNeural",
+    "下班关机_反击上下级": "zh-CN-YunxiNeural",
+    "深夜食堂_疯狂吐槽": "zh-CN-YunjianNeural",
+    "深海独潜": "zh-CN-YunxiNeural",
+}
+
 # 大模型写稿时遵守的「语音友好」标记，语义对齐 CosyVoice SSML（停顿≈<break>，留白≈长静音）
 # 文档: https://help.aliyun.com/zh/model-studio/introduction-to-cosyvoice-ssml-markup-language
 TTS_SCRIPT_DIRECTIVE = """
