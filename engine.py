@@ -309,6 +309,9 @@ def generate_soothing_noise(output_path, duration=60):
 def _cosyvoice_model_for_voice(voice_name: str) -> str:
     """音色与 CosyVoice 模型须同代，否则 API 418。参见百炼文档。"""
     vn = (voice_name or "").lower()
+    # 声音克隆：voice 是 HTTP URL（指向参考音频）
+    if vn.startswith("http://") or vn.startswith("https://"):
+        return "cosyvoice-clone-v1"
     if "v2" in vn:
         return "cosyvoice-v2"
     if vn == "longanyang" or "_v3" in vn or vn.endswith("v3") or "v3" in vn:
@@ -443,7 +446,11 @@ async def generate_audio(text, output_dir):
 
         try:
             if use_pro_voice:
-                await _synthesize_cosyvoice(sub_text_clean, temp_path, speed=speed)
+                try:
+                    await _synthesize_cosyvoice(sub_text_clean, temp_path, speed=speed)
+                except Exception as cosyvoice_err:
+                    console.print(f"[yellow]  CosyVoice 失败，降级 edge-tts: {cosyvoice_err}[/yellow]")
+                    await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate="-10%").save(temp_path)
             else:
                 await edge_tts.Communicate(sub_text_clean, "zh-CN-XiaoxiaoNeural", rate="-10%").save(temp_path)
         except Exception as e:
@@ -530,6 +537,84 @@ def mix_final_audio(voice_path, bgm_filename, output_dir, fade_in=5, fade_out=10
     size_mb = os.path.getsize(final_path) / 1024 / 1024
     console.print(f"  [green]成品音频: {final_path} ({size_mb:.1f}MB)[/green]")
     return final_path
+
+
+def normalize_audio_loudness(audio_path, target_lufs=-16.0):
+    """简易响度归一化：计算当前 RMS 并调整到目标水平。"""
+    try:
+        clip = AudioFileClip(audio_path)
+        fps = clip.fps or 44100
+        samples = clip.to_soundarray(fps=fps)
+        rms = np.sqrt(np.mean(samples ** 2))
+        if rms < 1e-8:
+            clip.close()
+            return
+        target_rms = 10 ** (target_lufs / 20.0)
+        gain = target_rms / rms
+        gain = max(0.3, min(3.0, gain))
+        if abs(gain - 1.0) < 0.05:
+            clip.close()
+            console.print(f"  [dim]响度已在目标范围，无需调整[/dim]")
+            return
+
+        console.print(f"  响度归一化: gain={gain:.2f}x")
+        normalized = clip.volumex(gain)
+        normalized.write_audiofile(audio_path, logger=None)
+        clip.close()
+        normalized.close()
+    except Exception as e:
+        console.print(f"  [yellow]响度归一化跳过: {e}[/yellow]")
+
+
+import json
+
+def generate_publish_metadata(theme_name, story_text, output_dir):
+    """为每期内容生成发布元数据（标题/简介/标签），适配多平台。"""
+    meta_path = os.path.join(output_dir, "metadata.json")
+    if os.path.exists(meta_path):
+        console.print(f"  [dim]元数据已存在，跳过[/dim]")
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    console.print("\n[bold cyan][发布助手] 正在生成多平台发布元数据...[/bold cyan]")
+    prompt = (
+        f"你是短视频/播客内容运营专家。主题：【{theme_name}】\n"
+        f"稿件开头：{story_text[:200]}\n\n"
+        "请为这期助眠音频生成发布元数据，严格按以下 JSON 格式输出，不要输出其他内容：\n"
+        '{\n'
+        '  "title": "吸引点击的标题（15-25字，含情绪钩子）",\n'
+        '  "subtitle": "副标题（10-15字，补充说明）",\n'
+        '  "description_ximalaya": "喜马拉雅简介（50-80字，含SEO关键词）",\n'
+        '  "description_bilibili": "B站简介（30-50字，年轻化口吻）",\n'
+        '  "description_xiaoyuzhou": "小宇宙简介（40-60字，播客风格）",\n'
+        '  "tags": ["标签1", "标签2", "标签3", "标签4", "标签5"],\n'
+        '  "category": "助眠/冥想/ASMR 三选一"\n'
+        '}'
+    )
+    try:
+        response = text_client.chat.completions.create(
+            model=API_CONFIG["text_model"],
+            messages=[{"role": "user", "content": prompt}],
+            stream=False,
+        )
+        raw = response.choices[0].message.content.strip()
+        # 提取 JSON 部分
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            metadata = json.loads(raw[start:end])
+        else:
+            metadata = {"title": theme_name, "tags": ["助眠", "深夜电台", "冥想"]}
+    except Exception as e:
+        console.print(f"[yellow]  元数据生成失败，使用默认值: {e}[/yellow]")
+        metadata = {"title": theme_name, "tags": ["助眠", "深夜电台", "冥想"]}
+
+    metadata["theme"] = theme_name
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    console.print(f"  标题: {metadata.get('title', '')}")
+    console.print(f"  标签: {metadata.get('tags', [])}")
+    return metadata
 
 # ==========================================
 # 模块：图生图底图生成器 (修改为：只生成1张图片)

@@ -74,7 +74,16 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False):
         final_audio = engine.mix_final_audio(voice_file, bgm_file, output_dir)
         result["final_audio"] = final_audio
 
-        # 4. 视觉素材（可选）
+        # 4. 响度归一化
+        engine.normalize_audio_loudness(final_audio)
+
+        # 5. 发布元数据
+        metadata = await asyncio.to_thread(
+            engine.generate_publish_metadata, theme_name, story, output_dir
+        )
+        result["title"] = metadata.get("title", theme_name)
+
+        # 6. 视觉素材（可选）
         if not audio_only:
             images = await asyncio.to_thread(
                 engine.generate_multi_images, theme_name, output_dir
@@ -140,18 +149,18 @@ async def batch_main(args):
     table = Table(title="批量生产报告")
     table.add_column("主题", style="cyan")
     table.add_column("状态")
+    table.add_column("发布标题")
     table.add_column("字数", justify="right")
     table.add_column("耗时", justify="right")
-    table.add_column("成品路径")
 
     for r in results:
         status_style = "green" if r["status"] == "OK" else "red"
         table.add_row(
             r["theme"],
             f"[{status_style}]{r['status']}[/{status_style}]",
+            r.get("title", "-"),
             str(r.get("story_len", "-")),
             f"{r.get('duration_sec', 0):.0f}s",
-            r.get("final_audio", "-"),
         )
 
     console.print(table)

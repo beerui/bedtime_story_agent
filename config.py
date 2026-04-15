@@ -58,6 +58,7 @@ API_CONFIG = {
     # 阿里云 DashScope - CosyVoice / Wan2.x 视频
     "cosyvoice_api_key": os.getenv("COSYVOICE_API_KEY", "").strip() or _dashscope_key,
     # 推荐音色：longxiaochun / longfeiye / longyue_v3 等
+    # 声音克隆：将此值设为参考音频的 HTTP URL（需先开通 DashScope 克隆权限）
     "tts_voice": os.getenv("TTS_VOICE", "longyue_v3").strip(),
     # [环境音：…] 在音轨上插入的静音秒数（后期可叠真实环境声）
     "tts_env_silence_seconds": float(os.getenv("TTS_ENV_SILENCE_SECONDS", "4.0")),

@@ -2,20 +2,17 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
 # Virtual environments
 .venv/
 venv/
 env/
 ENV/
-
 # Distribution / packaging
 build/
 dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
-
 # Tool caches
 .mypy_cache/
 .pytest_cache/
@@ -23,7 +20,6 @@ pip-wheel-metadata/
 .coverage
 .coverage.*
 htmlcov/
-
 # IDE / OS
 .idea/
 .vscode/
@@ -31,12 +27,13 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
-
 # Runtime / secrets
 .env
 .env.*
 !.env.example
 *.log
-
 # Project outputs
 outputs/
+.pikiclaw/*
+!.pikiclaw/skills/
+!.pikiclaw/skills/**
