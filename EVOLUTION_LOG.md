@@ -4,6 +4,35 @@
 
 ---
 
+## [2026-04-17] 隐私政策 + 使用条款 + newsletter consent 披露 (publish.py)
+**动因**: Newsletter form 收邮箱但没隐私政策页。GDPR（欧盟）/ 个人信息保护法（中国）/ Apple App Store 都要求收集邮箱必须披露用途。没有这两页属于法律雷区，尤其中文市场对数据合规审查变严
+**实现**:
+1. `_legal_page_template(title, body, ...)` 共享模板——隐私和条款样式、breadcrumb、footer 一致
+2. `generate_privacy_page`：按当前 monetization 配置自适应：
+   - Newsletter 启用时说"邮箱交给第三方 FormSubmit / Buttondown 发送通知"，禁用时说"未启用"
+   - Analytics 启用时说"匿名聚合数据"，禁用时说"无任何访问跟踪"
+   - 6 个章节：收集什么 / Cookie / 如何使用 / 第三方服务 / 你的权利 / 联系
+3. `generate_terms_page`：7 章覆盖
+   - **内容性质**：明说 AI 生成 + 链接到关于页的流程披露
+   - **不构成医疗建议**：助眠不是医疗，持续失眠应联系医生+列 3 个心理援助热线
+   - **内容许可**：代码 MIT，AI 生成内容 CC BY-NC 4.0（允许个人/二创/标注出处，禁止未授权商用、禁止反喂 AI 训练）
+   - **使用限制**：驾驶时不听、未成年人陪同、音量 <60dB
+   - 服务可用性 / 修改条款 / 联系
+4. 两页写到 `site/privacy.html` + `site/terms.html`
+5. Newsletter form 底部新增 `.nl-consent`：「点击订阅即同意 隐私政策」，链接路径根据 context（home/about 根路径 / episode 用 `../`）自适应
+6. About/FAQ/stats 页 footer 统一加 隐私 + 条款 链接
+7. sitemap 加 privacy + terms（priority 0.3，changefreq yearly）
+**验证**:
+- privacy.html + terms.html 生成成功，各章内容按 monetization 配置自适应
+- 首页 3 处 nl-consent 相关内容（newsletter form 底部）
+- sitemap 含 privacy.html
+- doctor.py 204 资源 0 error
+- 52 测试全部通过
+**价值**:
+- 法律基础补齐——不管是 Apple Podcasts 提交、Google 收录还是 EU 用户访问，都要求这两页存在
+- 诚实披露 AI 内容性质 + 医疗免责，保护站点 + 保护听众
+- CC BY-NC 4.0 为未来商业授权留口子（个人用免费，商用需谈）
+
 ## [2026-04-17] doctor.py --remote 模式：已部署站点的 HTTP 健康检查 (doctor.py + Makefile)
 **动因**: doctor.py 只检查本地 `site/` 目录的静态正确性——但部署后用户没工具验证线上真的在跑。Pages 可能配置错、CDN 可能 cache 了旧版、某个资源 404 都只能手动 curl 发现
 **实现**:
