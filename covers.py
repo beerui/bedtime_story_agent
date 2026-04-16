@@ -213,6 +213,154 @@ def _render_cover(title: str, badge: str, subtitle: str, seed: int) -> "Image.Im
     return img
 
 
+def generate_episode_square_cover(ep: dict, out_path: Path, size: int = 1400,
+                                    pain_point: str = "") -> bool:
+    """Per-episode square cover for podcast RSS (iTunes image tag per item).
+
+    Visually similar to `generate_podcast_cover` but with the episode's theme
+    badge + title + pain_point instead of the site-level brand. Apple Podcasts
+    / 小宇宙 / Spotify show per-episode art prominently in their now-playing
+    and episode list views — generic site art across all episodes feels lazy.
+
+    ~180KB per PNG at 1400x1400, PIL required."""
+    if not _HAS_PIL:
+        return False
+
+    rng = random.Random(_seed_from(ep.get("folder", "")))
+    # Per-episode hue drift for visual uniqueness
+    base_hue = (260 + rng.randint(-35, 35)) % 360 / 360.0
+    warm_hue = (40 + rng.randint(-12, 12)) % 360 / 360.0
+
+    img = Image.new("RGB", (size, size), (6, 6, 26))
+    px = img.load()
+    for y in range(size):
+        for x in range(size):
+            t = (x + y) / (size * 2)
+            dx = (x - size / 2) / size
+            dy = (y - size / 2) / size
+            r = (dx * dx + dy * dy) ** 0.5
+            mid_weight = max(0.0, 1.0 - r * 1.7)
+            c1 = _hsl_to_rgb(base_hue, 0.48, 0.14)
+            c2 = _hsl_to_rgb(warm_hue, 0.55, 0.19)
+            c0 = (6, 6, 26)
+            gr = int(c1[0] * (1 - t) + c2[0] * t)
+            gg = int(c1[1] * (1 - t) + c2[1] * t)
+            gb = int(c1[2] * (1 - t) + c2[2] * t)
+            rr = int(gr * (1 - mid_weight * 0.52) + c0[0] * (mid_weight * 0.52))
+            rgg = int(gg * (1 - mid_weight * 0.52) + c0[1] * (mid_weight * 0.52))
+            rb = int(gb * (1 - mid_weight * 0.52) + c0[2] * (mid_weight * 0.52))
+            px[x, y] = (rr, rgg, rb)
+
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Starfield
+    for _ in range(int(size / 8)):
+        cx = rng.randint(0, size - 1)
+        cy = rng.randint(0, size - 1)
+        rad = rng.randint(1, max(2, size // 280))
+        alpha = rng.randint(80, 210)
+        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=(255, 255, 255, alpha))
+
+    # Corner arcs
+    draw.ellipse([size * 0.58, size * 0.60, size * 1.12, size * 1.12],
+                 fill=(124, 111, 247, 50))
+    draw.ellipse([-size * 0.12, -size * 0.12, size * 0.32, size * 0.32],
+                 fill=(240, 194, 127, 35))
+
+    theme = ep.get("theme") or ""
+    title = ep.get("title") or theme or "助眠故事"
+
+    # Theme badge (top)
+    if theme:
+        badge_font = _load_font(max(28, size // 36))
+        try:
+            bbox = draw.textbbox((0, 0), theme, font=badge_font)
+            bw = bbox[2] - bbox[0]
+            bh = bbox[3] - bbox[1]
+        except AttributeError:
+            bw, bh = draw.textsize(theme, font=badge_font)
+        pad = size // 50
+        bx1 = (size - bw) // 2 - pad * 2
+        by1 = int(size * 0.10)
+        bx2 = bx1 + bw + pad * 4
+        by2 = by1 + bh + pad * 2
+        draw.rounded_rectangle([bx1, by1, bx2, by2], radius=size // 42,
+                               fill=(124, 111, 247, 70),
+                               outline=(124, 111, 247, 180), width=max(2, size // 600))
+        draw.text((bx1 + pad * 2, by1 + pad - 4), theme, font=badge_font,
+                  fill=(240, 194, 127, 255))
+
+    # Title — may need wrapping (max 2 lines)
+    title_font = _load_font(max(70, size // 14))
+    # Char-by-char wrap within 85% width
+    max_w = int(size * 0.85)
+    lines: list[str] = []
+    buf = ""
+    for ch in title:
+        test = buf + ch
+        try:
+            w = draw.textbbox((0, 0), test, font=title_font)[2]
+        except AttributeError:
+            w = draw.textsize(test, font=title_font)[0]
+        if w > max_w and buf:
+            lines.append(buf)
+            buf = ch
+            if len(lines) >= 2:
+                # truncate final line
+                buf = lines[-1][:-1] + "…" if len(lines[-1]) > 1 else "…"
+                lines = [lines[0], buf]
+                break
+        else:
+            buf = test
+    if len(lines) < 2:
+        lines.append(buf)
+
+    try:
+        line_h = draw.textbbox((0, 0), "助", font=title_font)[3] + size // 48
+    except AttributeError:
+        line_h = size // 12
+    block_h = line_h * len(lines)
+    start_y = (size - block_h) // 2 - size // 24
+    for i, line in enumerate(lines):
+        try:
+            bbox = draw.textbbox((0, 0), line, font=title_font)
+            lw = bbox[2] - bbox[0]
+        except AttributeError:
+            lw = draw.textsize(line, font=title_font)[0]
+        tx = (size - lw) // 2
+        # Soft shadow
+        draw.text((tx + 3, start_y + i * line_h + 3), line,
+                  font=title_font, fill=(0, 0, 0, 130))
+        draw.text((tx, start_y + i * line_h), line,
+                  font=title_font, fill=(240, 240, 250, 255))
+
+    # Pain point tagline (below title) — capped at ~30 chars
+    if pain_point:
+        pt = pain_point if len(pain_point) <= 32 else pain_point[:30] + "…"
+        pt_font = _load_font(max(32, size // 36))
+        try:
+            pw = draw.textbbox((0, 0), pt, font=pt_font)[2]
+        except AttributeError:
+            pw = draw.textsize(pt, font=pt_font)[0]
+        px_ = (size - pw) // 2
+        py_ = start_y + block_h + size // 30
+        draw.text((px_, py_), pt, font=pt_font, fill=(200, 200, 220, 220))
+
+    # Brand footer
+    brand = BRAND
+    brand_font = _load_font(max(22, size // 52))
+    try:
+        bw2 = draw.textbbox((0, 0), brand, font=brand_font)[2]
+    except AttributeError:
+        bw2 = draw.textsize(brand, font=brand_font)[0]
+    draw.text(((size - bw2) // 2, size - size // 14), brand,
+              font=brand_font, fill=(160, 160, 190, 200))
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path, "PNG", optimize=True)
+    return True
+
+
 def generate_episode_cover(ep: dict, out_path: Path) -> bool:
     """Render a cover for one episode. Returns True on success, False if Pillow unavailable."""
     if not _HAS_PIL:

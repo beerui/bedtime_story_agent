@@ -4,6 +4,25 @@
 
 ---
 
+## [2026-04-17] 每期独立方形封面：RSS per-item image (covers.py + publish.py)
+**动因**: 所有 RSS item 共享一张站点方图——Apple Podcasts / 小宇宙 / Spotify 在 now-playing 和 episode list 显示每期封面，同一张封面 22 期用，视觉懒。每期有独立视觉身份才显得用心
+**实现**:
+1. `covers.generate_episode_square_cover(ep, path, size=1400, pain_point)` 新增：
+   - 1400x1400 RGB PNG，folder 名哈希种子让每期色相 ±35° 漂移
+   - 上方主题徽章（暖金 pill）+ 中央双行自动换行标题（soft shadow）+ pain_point 一行副标题 + 底部品牌
+   - 与 generate_podcast_cover 视觉统一但内容按期定制
+2. `publish.main()` 为每期写到 `site/covers/{folder}.png`（~180-240KB/张），幂等跳过已存在
+3. `generate_rss` 的 item-level `<itunes:image>` 从"所有期都指向 podcast-cover.png"改为"指向 covers/{folder}.png"，仅在 `site_url` 存在时启用，否则兜底到 channel 级封面
+4. 22 期共 4.9MB 新增——可接受
+**验证**: 
+- 22 张方图全部生成
+- RSS feed.xml 有 22 个独立的 itunes:image href（全不重复），每个对应正确的 folder
+- 视觉抽查：AI焦虑夜的封面色相与午夜慢车不同（哈希偏色），标题正确换行
+**下一步**:
+- 可以进一步让封面背景受主题 category 影响（zeitgeist → 冷调；nature → 暖调）
+- 封面里的 pain_point 可以用笔刷字体（需要字体版权处理）
+- 生成过程可并行化（目前串行每期 1-2s，22 期约 30s 一次性）
+
 ## [2026-04-17] Podcast 2.0 标签 + 逐平台提交指南 (publish.py + docs/SUBMIT_PODCAST.md)
 **动因**: 上轮 RSS 做到 Apple 合规了但（a）没有现代 Podcast 2.0 namespace tags（`podcast:guid` / `podcast:transcript`）——新兴客户端（Fountain/Castamatic/Podverse）正在以此为准做分发；（b）用户不知道往哪提交——"合规了"和"出现在搜索结果"之间还有一道"手动粘 URL"鸿沟
 **实现**:
