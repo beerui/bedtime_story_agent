@@ -256,6 +256,26 @@ def generate_story(theme_name, output_dir, target_words, extra_prompt=""):
 
     theme_info = THEMES[theme_name]
     theme_brief = theme_info.get("story_prompt", "")
+    # 心理锚点：把主题的「痛点/技术/目标状态」显式告知 LLM，避免 story_prompt 单独一段
+    # 意思被稀释。custom theme 没这些字段时，meta_block 为空字符串，流程不受影响。
+    pain_point = theme_info.get("pain_point", "").strip()
+    technique = theme_info.get("technique", "").strip()
+    emotional_target = theme_info.get("emotional_target", "").strip()
+    meta_parts = []
+    if pain_point:
+        meta_parts.append(f"- 听众此刻的感受：{pain_point}")
+    if technique:
+        meta_parts.append(f"- 使用的心理/感官技术：{technique}")
+    if emotional_target:
+        meta_parts.append(f"- 听完后希望达到的状态：{emotional_target}")
+    meta_block = ""
+    if meta_parts:
+        meta_block = (
+            "\n【听众心理锚点 — 核心生产依据，必须回应】\n"
+            + "\n".join(meta_parts)
+            + "\n"
+        )
+
     spec = TTS_SCRIPT_DIRECTIVE
 
     def _llm_call(prompt_text, step_name):
@@ -271,29 +291,35 @@ def generate_story(theme_name, output_dir, target_words, extra_prompt=""):
 
     outline = _llm_call(
         f"你是睡眠冥想心理学家。主题【{theme_name}】。\n"
-        f"主题氛围要求：{theme_brief}\n\n{spec}\n\n"
+        f"主题氛围要求：{theme_brief}\n"
+        f"{meta_block}\n{spec}\n\n"
         "请写「三段式心理暗示大纲」，明确标注 [阶段：引入]、[阶段：深入]、[阶段：尾声] 三个阶段的分界。"
+        "大纲必须说明：引入段如何承认听众的当下感受（不回避、不说教），深入段如何用上面列出的技术帮助听众，"
+        "尾声段如何把听众带到目标状态。"
         f"大纲里标注计划在何处用 [环境音：] 与 [停顿]。{extra_prompt}",
         "1/大纲",
     )
     draft = _llm_call(
-        f"你是深夜电台主播，声音要慢、稳、催眠感。\n{spec}\n\n"
+        f"你是深夜电台主播，声音要慢、稳、催眠感。\n{meta_block}\n{spec}\n\n"
         f"根据大纲扩写成完整口播稿（约 {target_words} 字量级）：\n{outline}\n\n"
         "要求：\n"
         "1) 必须在正文对应位置保留 [阶段：引入]、[阶段：深入]、[阶段：尾声] 标记。\n"
         "2) 必须实际写出 [环境音：…]、[停顿] 或 [停顿500ms]/[停顿1s] 等标记，位置要自然。\n"
-        "3) 禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。",
+        "3) 禁止 [叹气][轻笑] 等会被念出来的方括号拟声词。\n"
+        "4) 如果上面列出了「听众此刻的感受」，引入段必须至少出现一次对这个感受的具体承认（不是笼统的「今天辛苦了」，"
+        "要映射到那个具体情境——例如裁员主题就直接承认「工位的杂物还散落在地」这类具体画面）。",
         "2/扩写",
     )
     final_story = _llm_call(
-        f"你是严苛主编：去掉 AI 腔与说教感，增强电影感与感官描写。\n{spec}\n\n"
+        f"你是严苛主编：去掉 AI 腔与说教感，增强电影感与感官描写。\n{meta_block}\n{spec}\n\n"
         "保留初稿中所有 [阶段：]、[环境音：]、[停顿…]、[慢速]、[轻声]、[极弱] 标记，不得删除或改成自然语言描述；可微调措辞与标点。\n\n"
         "【禁止清单】：\n"
         "- 排比不超过两组\n"
         "- 不以反问句结尾\n"
         "- 禁止「让我们」「我们一起」等集体感措辞\n"
         "- 禁止「你有没有想过」「其实」等说教开头\n"
-        "- 每段至少一个具体感官细节（触觉/嗅觉/温度/声音质感）\n\n"
+        "- 每段至少一个具体感官细节（触觉/嗅觉/温度/声音质感）\n"
+        "- 如果上面有「听众此刻的感受」，剧本必须直接承认这个感受，而不是用积极情绪覆盖它——承认比安慰更能让人放松\n\n"
         f"初稿：\n{draft}",
         "3/润色",
     )
@@ -304,7 +330,7 @@ def generate_story(theme_name, output_dir, target_words, extra_prompt=""):
         console.print(f"[yellow]  剧本评分 {score}/100 低于阈值，启动重写...[/yellow]")
         console.print(f"  [dim]反馈: {feedback}[/dim]")
         final_story = _llm_call(
-            f"你是严苛主编。以下剧本评分偏低，请根据反馈修改。\n{spec}\n\n"
+            f"你是严苛主编。以下剧本评分偏低，请根据反馈修改。\n{meta_block}\n{spec}\n\n"
             f"【评审反馈】：\n{feedback}\n\n"
             "保留所有 [阶段：]、[环境音：]、[停顿…]、[慢速]、[轻声]、[极弱] 标记。\n\n"
             f"原稿：\n{final_story}",
@@ -321,17 +347,32 @@ def generate_story(theme_name, output_dir, target_words, extra_prompt=""):
 
 def _evaluate_story(story_text, theme_name):
     """用 LLM 对剧本做催眠质量评分，返回 (score, feedback)。"""
+    theme_info = THEMES.get(theme_name, {})
+    pain_point = theme_info.get("pain_point", "").strip()
+    technique = theme_info.get("technique", "").strip()
+    target = theme_info.get("emotional_target", "").strip()
+    anchor_block = ""
+    if pain_point or technique or target:
+        lines = []
+        if pain_point: lines.append(f"  痛点：{pain_point}")
+        if technique: lines.append(f"  技术：{technique}")
+        if target: lines.append(f"  目标状态：{target}")
+        anchor_block = "\n本期主题的心理锚点：\n" + "\n".join(lines) + "\n"
+
     prompt = (
-        f"你是助眠内容质量审核专家。请对以下【{theme_name}】主题的助眠剧本做评估。\n\n"
-        "评分维度（每项 0-25 分，满分 100）：\n"
+        f"你是助眠内容质量审核专家。请对以下【{theme_name}】主题的助眠剧本做评估。\n"
+        f"{anchor_block}\n"
+        "评分维度（每项 0-20 分，满分 100）：\n"
         "1) 催眠感：语言节奏是否越来越慢、是否有渐进式放松引导\n"
         "2) 感官描写：是否有具体的触觉/嗅觉/温度/声音质感描写\n"
         "3) 节奏标记：[停顿]、[环境音]、[慢速]、[极弱] 等标记使用是否自然且渐进\n"
-        "4) 去AI腔：是否避免了排比、说教、集体措辞等 AI 痕迹\n\n"
+        "4) 去AI腔：是否避免了排比、说教、集体措辞等 AI 痕迹\n"
+        "5) 痛点对齐：是否承认了上面「痛点」描述的感受（而不是用正能量覆盖），是否用上了"
+        "「技术」所描述的心理/感官手法，结尾是否真正把听众带到「目标状态」\n\n"
         "严格按以下格式输出，不要输出其他内容：\n"
         "总分：XX\n"
-        "反馈：一句话改进建议\n\n"
-        f"剧本：\n{story_text[:1500]}"
+        "反馈：一句话改进建议（必须点出最低分的维度）\n\n"
+        f"剧本：\n{story_text[:1800]}"
     )
     try:
         response = text_client.chat.completions.create(

@@ -160,11 +160,12 @@ async def batch_main(args):
         console.print("[red]没有可用的主题[/red]")
         return
 
+    words_label = f"~{args.words}（全部）" if args.words > 0 else "按主题 ideal_duration_min 自动（80 字/分钟）"
     console.print(
         Panel.fit(
             f"[bold]批量生产计划[/bold]\n"
             f"主题数: {len(themes)}\n"
-            f"每期字数: ~{args.words}\n"
+            f"每期字数: {words_label}\n"
             f"模式: {'纯音频' if args.audio_only else '音频 + 视觉素材'}"
         )
     )
@@ -192,8 +193,18 @@ async def batch_main(args):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             ep_suffix = f"_EP{episode}" if episode else ""
             output_dir = f"outputs/Batch_{ts}_{theme_name}{ep_suffix}"
+            # Per-theme target words: honor explicit --words if given, otherwise
+            # derive from theme.ideal_duration_min. Calibration: observed rate is
+            # ~120-150 chars/min after prosody curve slowdown and pause insertion,
+            # so 80 chars/min is conservative — ensures at least the target minutes.
+            if args.words > 0:
+                target_words = args.words
+            else:
+                theme_cfg = THEMES.get(theme_name, {}) or {}
+                ideal_min = theme_cfg.get("ideal_duration_min") or 0
+                target_words = int(ideal_min * 80) if ideal_min > 0 else 600
             results[idx] = await produce_one(
-                theme_name, output_dir, args.words, args.audio_only,
+                theme_name, output_dir, target_words, args.audio_only,
                 dedup=dedup, episode=episode, binaural=args.binaural,
             )
             results[idx]["label"] = label
@@ -243,7 +254,8 @@ def main():
         "--all", action="store_true", help="遍历所有主题"
     )
     parser.add_argument(
-        "--words", type=int, default=600, help="每期目标字数"
+        "--words", type=int, default=0,
+        help="每期目标字数；不设则按主题 ideal_duration_min × 60 字/分钟自动推算（兜底 600）"
     )
     parser.add_argument(
         "--audio-only", action="store_true", help="纯音频模式（跳过图片/视频/封面）"
