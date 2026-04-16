@@ -273,8 +273,10 @@ def generate_rss(episodes: list[dict], base_url: str,
     are customized for the category so podcast apps render distinct feeds."""
     ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
     CONTENT = "{http://purl.org/rss/1.0/modules/content/}"
+    PODCAST = "{https://podcastindex.org/namespace/1.0}"
     ET.register_namespace("itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
     ET.register_namespace("content", "http://purl.org/rss/1.0/modules/content/")
+    ET.register_namespace("podcast", "https://podcastindex.org/namespace/1.0")
 
     rss = ET.Element("rss", version="2.0")
     channel = ET.SubElement(rss, "channel")
@@ -330,6 +332,14 @@ def generate_rss(episodes: list[dict], base_url: str,
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
+    # Podcast 2.0 namespace: stable show-level GUID derived from site URL.
+    # Future-proofs us for Podcast Index and modern clients (Fountain, Castamatic,
+    # Podverse) that use podcast:guid as primary identifier across aggregators.
+    if site_url:
+        import uuid as _uuid
+        show_guid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"{site_url}/{category_key or ''}"))
+        ET.SubElement(channel, f"{PODCAST}guid").text = show_guid
+
     # Filter episodes if category_key given
     if category_key:
         episodes = [
@@ -362,6 +372,16 @@ def generate_rss(episodes: list[dict], base_url: str,
         # but Apple accepts it when episode-level; use site cover as safe default)
         ep_img = ET.SubElement(item, f"{ITUNES}image")
         ep_img.set("href", cover_url)
+
+        # Podcast 2.0: transcript link. Our TXT file is already generated at
+        # site/episodes/{slug}.txt — modern clients (Fountain, Podverse, Castro)
+        # will display this as a readable transcript alongside playback.
+        if site_url:
+            transcript_url = f"{site_url}/episodes/{ep['folder']}.txt"
+            tr = ET.SubElement(item, f"{PODCAST}transcript")
+            tr.set("url", transcript_url)
+            tr.set("type", "text/plain")
+            tr.set("language", PODCAST_LANG)
 
         ET.SubElement(item, "guid", isPermaLink="false").text = ep["folder"]
 

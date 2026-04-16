@@ -187,6 +187,12 @@ python3 synthesize_once.py "要合成的文字"             # 独立 TTS
 
 `python3 validate.py` 会列出所有未找到 BGM 文件的主题（info 级别）。
 
+## 分发到播客平台
+
+生成的 RSS 合规 Apple Podcasts / Spotify / 小宇宙 / Podcast Index 的提交要求。详见 [docs/SUBMIT_PODCAST.md](docs/SUBMIT_PODCAST.md) 的逐平台步骤——30 秒粘贴一次 RSS URL 的事，就能把站点变成多平台分发。
+
+**开始前**：把真实联系邮箱填到 `monetization.json → social.contact_email`（平台验证用；占位符会被拒）。
+
 ## License
 
 MIT

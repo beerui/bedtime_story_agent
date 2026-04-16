@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-04-17] Podcast 2.0 标签 + 逐平台提交指南 (publish.py + docs/SUBMIT_PODCAST.md)
+**动因**: 上轮 RSS 做到 Apple 合规了但（a）没有现代 Podcast 2.0 namespace tags（`podcast:guid` / `podcast:transcript`）——新兴客户端（Fountain/Castamatic/Podverse）正在以此为准做分发；（b）用户不知道往哪提交——"合规了"和"出现在搜索结果"之间还有一道"手动粘 URL"鸿沟
+**实现**:
+1. `generate_rss` 加 Podcast 2.0 namespace:
+   - Channel `<podcast:guid>` = `uuid5(URL_namespace, site_url + category_key)`——稳定身份，跨平台认领同一节目用
+   - Item `<podcast:transcript url="...txt" type="text/plain" language="zh-cn">` 链接到我们生成的纯文本稿；Fountain/Castro/Podverse 会在播放时同步显示
+2. 新增 `docs/SUBMIT_PODCAST.md`，逐平台步骤：
+   - **Apple Podcasts Connect**（审核 24-72h）
+   - **小宇宙**（审核 24h，中文主场）
+   - **Spotify for Podcasters**（要 RSS owner email 收验证码）
+   - **Overcast**（自动继承 Apple）
+   - **Podcast Index**（一家提交、数十客户端同步）
+   - **喜马拉雅**（不支持 RSS，需主播认证手动上传或写 API 脚本）
+   - 每家平台：准备清单、入口 URL、流程、收录后如何回填到 monetization.json
+   - FAQ：预检工具（castfeedvalidator.com）、被拒诊断、封面尺寸问题、多平台填信息
+3. README 新增「分发到播客平台」章节链到该文档
+4. 22 期 feed 现有 23 个 Podcast 2.0 tags（1 guid + 22 transcripts）
+**验证**: feed.xml 合规+完整；测试全 50 通过；SUBMIT 文档覆盖 7 个平台
+**下一步**:
+- 可加 Podcast 2.0 的 `<podcast:chapters>` 指向一个 JSON chapters 文件（已有 extract_chapters 逻辑，只需导出 JSON）
+- `<podcast:person>` 标签声明 narrator/host——增加节目可信度
+- 提交后拿到的各平台链接回填 `monetization.json` 的 `subscribe.*_url`，订阅按钮自动用官方入口替代 `podcasts://` 协议
+
 ## [2026-04-17] Apple Podcasts 提交就绪：完整 iTunes RSS + 1400x1400 方形封面 (covers.py + publish.py + validate.py)
 **动因**: 主 RSS feed.xml 的 `<itunes:*>` 标签不完整——缺 owner/image/type/summary/subcategory 等 Apple Podcasts 提交时必检的 tag；也没有 1400x1400 方形封面（Apple 要求 1400-3000px 方图、<500KB、无透明）。按现状提交 Apple Podcasts Connect 会被自动拒
 **实现**:
