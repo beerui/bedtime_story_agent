@@ -462,11 +462,55 @@ def _evaluate_story(story_text, theme_name):
     except Exception:
         return 75, ""  # API 失败不阻塞流程
 
-def generate_soothing_noise(output_path, duration=60):
-    sr = 44100  
-    noise = np.random.uniform(-1, 1, sr * duration)
-    soothing_noise = np.convolve(noise, np.ones(150)/150, mode='same')
-    clip = AudioArrayClip(np.vstack((soothing_noise, soothing_noise)).T, fps=sr)
+def generate_soothing_noise(output_path, duration=60, color="brown"):
+    """Generate a pleasant ambient noise bed for when a theme-specific BGM is
+    missing. Defaults to brown noise (integrated white noise, 1/f² spectrum) —
+    sounds like distant rumble / deep ocean, the most sleep-friendly of the
+    noise colors. Pink noise (1/f) is a gentler alternative, closer to rain.
+
+    color: 'brown' | 'pink' | 'white'
+    """
+    sr = 44100
+    n_samples = int(sr * duration)
+    rng = np.random.default_rng()
+
+    if color == "brown":
+        # Brown/red noise: cumulative sum of white noise, then remove drift + DC
+        white = rng.standard_normal(n_samples)
+        brown = np.cumsum(white)
+        # Remove linear trend (prevents slow DC wandering that sounds like volume ramps)
+        t = np.arange(n_samples)
+        slope = (brown[-1] - brown[0]) / max(1, n_samples - 1)
+        brown = brown - slope * t
+        brown = brown - brown.mean()  # center around zero
+        signal = brown
+    elif color == "pink":
+        # Pink noise via fast FFT-based 1/sqrt(f) shaping — cleaner than Voss-McCartney
+        white = rng.standard_normal(n_samples)
+        spec = np.fft.rfft(white)
+        # 1/sqrt(f) attenuation (pink = -3 dB/octave)
+        freqs = np.fft.rfftfreq(n_samples, d=1 / sr)
+        freqs[0] = 1  # avoid div-by-zero at DC
+        spec = spec / np.sqrt(freqs)
+        signal = np.fft.irfft(spec, n=n_samples)
+    else:
+        signal = rng.uniform(-1, 1, n_samples)
+
+    # Normalize to peak ~0.9 (leave headroom; mixer will attenuate further)
+    peak = np.max(np.abs(signal))
+    if peak > 0:
+        signal = signal / peak * 0.9
+
+    # Gentle 2-second fade in/out to avoid clicks at loop boundaries
+    fade_samples = int(sr * 2)
+    fade_samples = min(fade_samples, n_samples // 2)
+    if fade_samples > 0:
+        fade_in = np.linspace(0, 1, fade_samples)
+        fade_out = np.linspace(1, 0, fade_samples)
+        signal[:fade_samples] *= fade_in
+        signal[-fade_samples:] *= fade_out
+
+    clip = AudioArrayClip(np.vstack((signal, signal)).T, fps=sr)
     clip.write_audiofile(output_path, fps=sr, logger=None)
     return output_path
 
@@ -715,18 +759,24 @@ def mix_final_audio(voice_path, bgm_filename, output_dir, fade_in=5, fade_out=10
     voice_clip = AudioFileClip(voice_path)
     total_dur = voice_clip.duration + 4  # 留 4 秒尾部静音渐出
 
-    # 加载 BGM
-    bgm_path = f"assets/{bgm_filename}" if bgm_filename else None
-    if bgm_path and os.path.exists(bgm_path):
+    # Load BGM: prefer assets/bgm/{name}, fall back to assets/{name}, finally
+    # fall back to an auto-generated brown-noise bed
+    bgm_path = None
+    if bgm_filename:
+        for candidate in (f"assets/bgm/{bgm_filename}", f"assets/{bgm_filename}"):
+            if os.path.exists(candidate):
+                bgm_path = candidate
+                break
+    if bgm_path:
         bgm_clip = AudioFileClip(bgm_path)
-        console.print(f"  BGM: {bgm_filename}")
+        console.print(f"  BGM: {bgm_path}")
     else:
-        # 降级：生成柔和噪声作为底噪
+        # 降级：棕噪底噪（助眠友好，1/f² 频谱模拟深海/远方低鸣）
         noise_path = "assets/auto_generated_noise.mp3"
         if not os.path.exists(noise_path):
             generate_soothing_noise(noise_path, 60)
         bgm_clip = AudioFileClip(noise_path)
-        console.print("  BGM: 自动生成柔和底噪")
+        console.print(f"  BGM: 自动生成棕噪底噪（配置 {bgm_filename or '未指定'} 不存在）")
 
     looped_bgm = audio_loop(bgm_clip, duration=total_dur)
     looped_bgm = looped_bgm.volumex(bgm_vol)
@@ -913,7 +963,15 @@ def assemble_pro_video(image_paths, ai_video_paths, voice_path, subtitles_info, 
     output_path = os.path.join(output_dir, f"Final_Video_{theme_name}.mp4")
 
     voice_clip = AudioFileClip(voice_path)
-    if bgm_filename and os.path.exists(f"assets/{bgm_filename}"): bgm_clip = AudioFileClip(f"assets/{bgm_filename}")
+    # Look in assets/bgm/ first, fall back to assets/, then auto-noise
+    _bgm_resolved = None
+    if bgm_filename:
+        for _cand in (f"assets/bgm/{bgm_filename}", f"assets/{bgm_filename}"):
+            if os.path.exists(_cand):
+                _bgm_resolved = _cand
+                break
+    if _bgm_resolved:
+        bgm_clip = AudioFileClip(_bgm_resolved)
     else:
         fb_bgm = "assets/auto_generated_noise.mp3"
         if not os.path.exists(fb_bgm): generate_soothing_noise(fb_bgm, 60)

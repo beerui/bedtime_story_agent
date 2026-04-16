@@ -165,6 +165,18 @@ python3 debug.py                                     # 模块级调试
 python3 synthesize_once.py "要合成的文字"             # 独立 TTS
 ```
 
+## BGM（背景音）
+
+每个主题在 `config.py` 里声明了 `bgm_file`（例：`train_night.mp3`）。生产时按优先级查找：
+
+1. `assets/bgm/{name}`（推荐目录，主题专属 BGM 放这里）
+2. `assets/{name}`（向后兼容）
+3. **降级：生成棕噪底噪**（1/f² 频谱，助眠友好，模拟深海/远方低鸣）
+
+如果你想给某主题配真实 BGM（雨声、火车哐当、篝火等）：把 mp3 文件放到 `assets/bgm/` 并命名与 `config.py` 里的 `bgm_file` 一致即可。没配也不影响使用——棕噪生成器会兜底出可用音轨。
+
+`python3 validate.py` 会列出所有未找到 BGM 文件的主题（info 级别）。
+
 ## License
 
 MIT

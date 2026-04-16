@@ -182,6 +182,28 @@ def check_episode(folder: Path) -> list[dict]:
     return issues
 
 
+def check_bgm_inventory(repo_root: Path) -> list[dict]:
+    """Report themes whose declared bgm_file doesn't exist in assets/ or
+    assets/bgm/ — those episodes fall back to auto-generated brown noise."""
+    issues: list[dict] = []
+    try:
+        import config
+    except Exception:
+        return issues
+    bgm_dir1 = repo_root / "assets" / "bgm"
+    bgm_dir2 = repo_root / "assets"
+    found = {f.name for d in (bgm_dir1, bgm_dir2) if d.is_dir() for f in d.iterdir() if f.is_file()}
+    for theme_name, cfg in (getattr(config, "THEMES", None) or {}).items():
+        bgm = (cfg.get("bgm_file") or "").strip()
+        if bgm and bgm not in found:
+            issues.append({
+                "severity": "info",
+                "code": "bgm_missing",
+                "message": f"主题「{theme_name}」声明的 BGM「{bgm}」在 assets/ 和 assets/bgm/ 都不存在——降级为棕噪底噪",
+            })
+    return issues
+
+
 def check_crosses(outputs_dir: Path, per_folder_issues: dict) -> list[tuple[str, dict]]:
     """Cross-folder checks: same (day, theme) appearing multiple times."""
     cross_issues: list[tuple[str, dict]] = []
@@ -233,6 +255,11 @@ def main() -> int:
     # Cross-folder checks
     for name, issue in check_crosses(outputs, per_folder):
         per_folder.setdefault(name, []).append(issue)
+
+    # Repo-wide BGM inventory (informational)
+    bgm_issues = check_bgm_inventory(Path(__file__).parent)
+    if bgm_issues:
+        per_folder.setdefault("_bgm_inventory", []).extend(bgm_issues)
 
     # Aggregate
     total_by_sev: dict[str, int] = {"error": 0, "warning": 0, "info": 0}

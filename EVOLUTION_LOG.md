@@ -4,6 +4,32 @@
 
 ---
 
+## [2026-04-17] 底噪从白噪声升级为棕噪 + BGM 路径 assets/bgm/ (engine.py + validate.py)
+**动因**: 审计发现 18 个主题都声明了 bgm_file（`train_night.mp3`/`heavy_rain_roof.mp3` 等），但 `assets/bgm/` 目录不存在，具体 BGM 文件也都不存在——所有期 BGM 都走了 `generate_soothing_noise` 降级。而原来的降级函数只是白噪声过一个朴素低通卷积——白噪+低通≠棕噪，声音依然偏"嘶"，离睡眠友好差远了
+**实现**:
+1. `engine.generate_soothing_noise` 重写：
+   - `color='brown'`（默认）：累积和 white→cumsum→detrend（去线性漂移，避免音量渐变感）→ 减均值（居中）→ normalize peak 0.9。棕噪 1/f² 频谱，听感类似深海/远方低鸣，业界公认最助眠的噪声色
+   - `color='pink'`：FFT 频域做 `/sqrt(f)` 整形（比 Voss-McCartney 更干净）→ 1/f 频谱，近似雨声
+   - `color='white'`：原始白噪（保留原行为以防万一）
+   - 所有 color 都自动加 2 秒 fade-in/out，避免循环接缝咔嗒声
+   - 验证：棕噪 low/high 功率比 1383x（教科书级）、peak=0.900、mean=0.000000（无直流偏移）
+2. `engine.mix_final_audio` 和 `assemble_pro_video` 升级 BGM 查找顺序：
+   - 先找 `assets/bgm/{name}`（推荐路径，主题 BGM 归类）
+   - 降级到 `assets/{name}`（向后兼容）
+   - 都没有 → 棕噪底噪生成
+   - 控制台日志加 BGM 完整路径 + 配置缺失提示
+3. `validate.py` 新增 `check_bgm_inventory`：从 config.THEMES 读每个主题的 bgm_file，遍历 assets/ 和 assets/bgm/，报告缺失的为 info 级别（不阻断部署）
+4. 实跑 validate 报 18 个 info（全部主题都缺 BGM），明确告诉用户需要做什么
+5. README 新增 BGM 章节，解释 3 级查找策略和用户可选的 BGM 补齐流程
+**验证**:
+- engine 模块导入无报错
+- 18 info 全部准确（逐一对应主题声明的文件名）
+- 棕噪算法数学正确（详见验证数据）
+**下一步**:
+- 可以内置 3-5 个版权合法的高质量 BGM 素材文件（creative commons）放 assets/bgm/
+- BGM 可以按主题分类自动选：如果主题专属不存在，按 category 降级到同类的通用 BGM
+- 棕噪可以进一步做 EQ 整形（削掉 >8kHz 高频）让听感更温润
+
 ## [2026-04-17] 继续收听 + Media Session API：回访留存 + 锁屏可见性 (publish.py)
 **动因**: 两个独立但关联的 UX 洞：(1) 听众在一期中途离开（睡着/通勤到站/电话打断）后再回来，只能从头听，没有位置记忆——回访用户直接流失掉未完成期；(2) 手机锁屏后看不到当前节目信息，来电/切歌时要解锁才知道在播什么——非原生 App 都缺这一层
 **实现**:
