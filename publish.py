@@ -710,6 +710,46 @@ _CUE_RE = re.compile(r"\[环境音[:：]\s*([^\]]+)\]")
 _STRIP_RE = re.compile(r"\[[^\]]+\]")
 
 
+def render_script_plaintext(text: str, chapter_titles: dict | None = None) -> str:
+    """Convert a story draft to clean plain-text suitable for TXT download.
+
+    - Phase markers become '【引入】' style headings (using chapter_titles if
+      provided, else just the phase name)
+    - Ambient cues become parentheticals (（雨声）)
+    - Pause markers and prosody tags are stripped
+    - Empty lines collapse into paragraph breaks"""
+    if not text:
+        return ""
+    out: list[str] = []
+    overrides = chapter_titles or {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if out and out[-1] != "":
+                out.append("")
+            continue
+        m = _PHASE_RE.match(line)
+        if m:
+            phase = m.group(1).strip()
+            title = overrides.get(phase) or phase
+            if out and out[-1] != "":
+                out.append("")
+            out.append(f"【{title}】")
+            out.append("")
+            continue
+        line = _CUE_RE.sub(lambda mm: f"（{mm.group(1).strip()}）", line)
+        line = _PAUSE_RE.sub("", line)
+        line = _STRIP_RE.sub("", line).strip()
+        if line:
+            out.append(line)
+    # strip leading/trailing empties
+    while out and out[0] == "":
+        out.pop(0)
+    while out and out[-1] == "":
+        out.pop()
+    return "\n".join(out)
+
+
 def render_script_html(text: str) -> str:
     """Turn a story draft (with prosody/phase/cue markup) into readable HTML.
 
@@ -779,6 +819,66 @@ def _episode_slug(ep: dict) -> str:
 _SRT_BLOCK_RE = re.compile(
     r"(\d+):(\d+):(\d+)[,\.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,\.](\d+)"
 )
+
+
+def generate_episodes_manifest(episodes: list[dict], base_url: str) -> str:
+    """Machine-readable episode index — for 3rd-party embeds, future mobile apps,
+    aggregators, search APIs. One JSON file at /episodes.json containing normalized
+    per-episode metadata aligned with the site's canonical URLs."""
+    base = (base_url or "").rstrip("/")
+    out = {
+        "site": {
+            "name": PODCAST_TITLE,
+            "description": PODCAST_DESC,
+            "language": PODCAST_LANG,
+            "url": base or None,
+            "rss": f"{base}/feed.xml" if base else "feed.xml",
+        },
+        "categories": {
+            k: {
+                "label": c.get("label", k),
+                "description": c.get("description", ""),
+                "rss": f"{base}/feed/{k}.xml" if base else f"feed/{k}.xml",
+                "page": f"{base}/category/{k}.html" if base else f"category/{k}.html",
+            }
+            for k, c in (_THEME_CATEGORIES or {}).items()
+        },
+        "episodes": [],
+    }
+    for ep in episodes:
+        theme_cfg = _THEMES.get(ep["theme"]) or {}
+        slug = _episode_slug(ep)
+        page_url = f"{base}/episodes/{slug}.html" if base else f"episodes/{slug}.html"
+        audio_rel = ep.get("site_audio") or ep.get("audio_path", "")
+        audio_url = f"{base}/{audio_rel}" if base and audio_rel else audio_rel
+        chapters = extract_chapters(
+            ep.get("draft_full", ""),
+            ep.get("srt", ""),
+            title_overrides=ep.get("chapter_titles") or None,
+        )
+        out["episodes"].append({
+            "id": ep["folder"],
+            "title": ep["title"],
+            "theme": ep["theme"],
+            "category": theme_cfg.get("category"),
+            "pain_point": theme_cfg.get("pain_point"),
+            "technique": theme_cfg.get("technique"),
+            "emotional_target": theme_cfg.get("emotional_target"),
+            "description": ep["description"],
+            "tags": ep["tags"],
+            "duration_sec": ep["duration"],
+            "word_count": ep["word_count"],
+            "published_at": ep["timestamp"].strftime("%Y-%m-%dT%H:%M:%S"),
+            "page_url": page_url,
+            "audio_url": audio_url,
+            "transcript_url": f"{base}/episodes/{slug}.txt" if base else f"episodes/{slug}.txt",
+            "chapters": [
+                {"title": c["title"], "phase": c.get("phase"),
+                 "start_sec": round(c["start_sec"], 2), "end_sec": round(c["end_sec"], 2)}
+                for c in chapters
+            ],
+        })
+    return json.dumps(out, ensure_ascii=False, indent=2)
 
 
 def _breadcrumb_jsonld(items: list[tuple[str, str]]) -> str:
@@ -1198,7 +1298,11 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       padding: 1px 6px; border-radius: 8px;
     }}
     body.pc-dimmed {{ opacity: 0.3; transition: opacity 1.5s ease; }}
-    .share-wrap {{ position: relative; margin-top: 12px; }}
+    .share-wrap {{
+      position: relative; margin-top: 12px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }}
+    a.share-btn {{ text-decoration: none; display: inline-flex; align-items: center; }}
     .share-btn {{
       background: none; border: 1px solid var(--border);
       color: var(--text); padding: 6px 14px; border-radius: 18px;
@@ -1394,6 +1498,14 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           <audio controls preload="metadata" src="{_esc(audio_src)}"></audio>
           <div class="share-wrap">
             <button class="share-btn" onclick="toggleShareMenu()">📤 分享到…</button>
+            <a class="share-btn" href="{_esc(audio_src)}" download
+               onclick="if(window.trackEvent)window.trackEvent('Download Episode',{{format:'mp3'}});">
+              ⬇︎ MP3
+            </a>
+            <a class="share-btn" href="{_esc(_episode_slug(ep))}.txt" download
+               onclick="if(window.trackEvent)window.trackEvent('Download Episode',{{format:'txt'}});">
+              📄 文稿
+            </a>
             <div class="share-menu" id="shareMenu">
               <button onclick="shareTo('x')">𝕏 Twitter</button>
               <button onclick="shareTo('weibo')">微博</button>
@@ -3361,6 +3473,10 @@ def main():
             prev_ep=prev_ep, next_ep=next_ep, related=related,
         )
         (episodes_dir / f"{_episode_slug(ep)}.html").write_text(page, encoding="utf-8")
+        # Write clean plain-text transcript alongside the HTML — downloadable as TXT
+        plain = render_script_plaintext(ep.get("draft_full", ""), ep.get("chapter_titles"))
+        if plain:
+            (episodes_dir / f"{_episode_slug(ep)}.txt").write_text(plain, encoding="utf-8")
     print(f"[OK] 单期页 × {len(episodes)} → {episodes_dir}")
 
     # generate OG cover images (social share cards) — skip if Pillow unavailable
@@ -3459,6 +3575,12 @@ def main():
             feeds_written += 1
         if feeds_written:
             print(f"[OK] 分类 RSS × {feeds_written} → {feed_dir}")
+
+    # machine-readable manifest for 3rd-party consumers
+    (SITE_DIR / "episodes.json").write_text(
+        generate_episodes_manifest(episodes, args.base_url), encoding="utf-8"
+    )
+    print(f"[OK] episodes.json → {SITE_DIR / 'episodes.json'}")
 
     print(f"\n共 {len(episodes)} 期节目已发布。")
 

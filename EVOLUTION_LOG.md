@@ -4,6 +4,31 @@
 
 ---
 
+## [2026-04-17] 单期下载（MP3+文稿）+ episodes.json 清单 (publish.py)
+**动因**: 听众在通勤/出差/没网时想离线听——但单期页只能在线播放，没下载入口；想剪贴文稿到笔记/翻译，得手动复制 HTML；外部聚合器/未来移动端没有机器可读的节目清单可消费
+**实现**:
+1. 新增 `render_script_plaintext(text, chapter_titles)`：把剧本转成干净 TXT
+   - 阶段标记 `[阶段：X]` → `【章节具体标题】` 标题（用 chapter_titles 覆盖通用名）
+   - 环境音 `[环境音：X]` → `（X）` 内联括号
+   - 停顿/慢速/轻声/极弱等所有 `[xxx]` 标记全剥
+   - 段落空行收敛到单一空行
+2. publish.py main() 在生成单期 HTML 同时写入 `site/episodes/{folder}.txt`（约 800-1200 字每期）
+3. 单期页 `.share-wrap` 加两个 `<a download>` 按钮：
+   - 「⬇︎ MP3」直接下当前音频文件
+   - 「📄 文稿」下同名 .txt 文件
+   - 各自触发 `Download Episode` 埋点带 `format` prop
+4. CSS：`.share-wrap` 改成 flex-wrap 让按钮组自然排列
+5. `generate_episodes_manifest(episodes, base_url)` 新输出 `site/episodes.json`：
+   - `site` 节：站名/描述/语言/RSS
+   - `categories` 节：4 个分类的 label/description/rss/page URLs
+   - `episodes` 数组：每期含 id/title/theme/category/pain_point/technique/emotional_target/description/tags/duration_sec/word_count/published_at（ISO 8601）/page_url/audio_url/transcript_url/chapters[]
+   - 全部 URL 用 `--base-url` 拼绝对路径，方便外部消费
+**验证**: 22 个 .txt 生成（清晰可读，章节标题正确替换），episodes.json 38KB（包含 4 categories + 22 episodes，每期 chapters 含 phase + title + 时间戳），下载按钮 a download 跨浏览器兼容
+**下一步**:
+- TXT 文件可加文件头元数据（标题/作者/日期/URL）方便下载后归档
+- episodes.json 可作 RFC 9116 风格的 well-known endpoint（如 `/.well-known/podcast-manifest.json`）
+- 文稿下载可生成 .epub（需要 lxml/ebooklib）甚至 .pdf（reportlab/weasyprint），让用户能像看小说一样阅读
+
 ## [2026-04-17] 管线健康检查 validate.py + Actions 质量门 (validate.py + .github/workflows/daily.yml)
 **动因**: 22 期产出后没有工具验证数据完整性。某期可能缺 SRT 导致章节 UI 断层、chapter_titles.json 解析失败导致章节名退化、metadata.json 缺字段导致 RSS 描述默认化——这些问题只有逐个访问页面才能发现。需要一键跑完「全部 22 期是否符合生产规格」
 **实现**:
