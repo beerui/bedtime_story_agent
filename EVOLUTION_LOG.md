@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-04-17] LUFS 响度归一：跨期音量一致 (audio_fx.py + engine.py + backfill_loudness.py)
+**动因**: 审计 22 期响度发现 **7.6 dB 跨度**（-33.2 到 -25.6 LUFS）。睡眠场景对响度突变极敏感——听众在期 A 调好音量后切到期 B 可能突然变响或变闷，频繁的音量调整会破坏入睡状态。这是产品级的听感体验问题
+**实现**:
+1. 新增 `audio_fx.py`：
+   - `_find_ffmpeg()` 优先系统 PATH，兜底 imageio_ffmpeg 绑定的二进制（moviepy 的依赖本就有）
+   - `measure_lufs(path)` 双路径测量：优先 pyloudnorm（EBU R128 精确），兜底 ffmpeg ebur128 filter 解析 stderr
+   - `normalize_mp3(path, target_lufs=-22)` 用 **ffmpeg loudnorm 两遍法**：
+     - Pass 1 跑 `print_format=json` 测量 input_i/tp/lra/thresh
+     - Pass 2 用这些测量值 + `linear=true` 做动态归一
+     - 两遍法对已经很安静的源比单遍线性更接近目标
+2. `engine.mix_final_audio` 结尾调 `audio_fx.normalize_mp3`（`NORMALIZE_LUFS` 环境变量可覆盖目标值）；失败不阻塞；打印 before→after 对比
+3. `backfill_loudness.py` 一次性批处理现有 outputs/；`--dry-run` 只测量、`--target N` 改目标、`--only substr` 过滤
+4. requirements.txt 加 pyloudnorm + soundfile
+5. README 的"它能做什么"补充 LUFS 归一
+**验证**: 
+- 本地测单文件：-29.9 → -25.7 LUFS（单次调用），再次调用 -25.7 → -25.7（幂等 ✓）
+- 跑 `backfill_loudness.py` 处理全部 22 期：**跨度从 7.6 dB 收敛到 0.5 dB**（-26.1 到 -25.6 全部）
+- 为什么没到 -22 目标？loudnorm 的 `linear=true` 尊重 true-peak -1.5 dBTP 限制，不压缩动态。对极安静的源（我们的韵律曲线尾部 0.55x speed + 0.3 volume）达不到 -22 是预期行为，但 0.5 dB 跨度已实现跨期一致性
+**下一步**:
+- `NORMALIZE_LUFS=-24 python3 batch.py` 可产出更安静的版本供深度助眠
+- 将来内容体量大了可以做 album-level normalization（整个 podcast 品牌一致响度）
+- Apple Podcasts 等平台有自己的 normalization（Sound Check），-22 是上游最佳值让下游无需二次处理
+
 ## [2026-04-17] CI workflow：push/PR 自动跑测试+校验 (.github/workflows/ci.yml)
 **动因**: 上轮加了 22 个单测但只能本地手跑。这些测试只有在提交前被记得跑才有价值——人会忘记。CI 在 push/PR 时自动跑，让 failing tests 像编译错误一样立即可见，是"锁定成果"的最后一公里
 **实现**:

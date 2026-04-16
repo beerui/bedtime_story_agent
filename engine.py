@@ -790,6 +790,20 @@ def mix_final_audio(voice_path, bgm_filename, output_dir, fade_in=5, fade_out=10
     voice_clip.close()
     bgm_clip.close()
 
+    # LUFS 归一：统一到 -22 LUFS（或 NORMALIZE_LUFS 环境变量指定值），
+    # 避免跨期响度跳变惊扰睡眠中的听众。失败不阻塞。
+    try:
+        import audio_fx
+        if audio_fx.available():
+            target = float(os.getenv("NORMALIZE_LUFS", str(audio_fx.DEFAULT_TARGET_LUFS)))
+            before = audio_fx.measure_lufs(final_path)
+            if audio_fx.normalize_mp3(final_path, target_lufs=target):
+                after = audio_fx.measure_lufs(final_path)
+                if before is not None and after is not None:
+                    console.print(f"  响度归一: {before:.1f} → {after:.1f} LUFS (目标 {target})")
+    except Exception as _lufs_err:
+        console.print(f"  [yellow]响度归一跳过（忽略）: {_lufs_err}[/yellow]")
+
     size_mb = os.path.getsize(final_path) / 1024 / 1024
     console.print(f"  [green]成品音频: {final_path} ({size_mb:.1f}MB)[/green]")
     return final_path

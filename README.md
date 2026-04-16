@@ -11,7 +11,7 @@
 1. **AI 写稿（含心理锚点）** — 三轮 LLM 生成（心理学大纲 → 口播稿 → 去 AI 腔润色），主题的 `pain_point/technique/emotional_target` 元数据直接注入 prompt，LLM 有明确心理目标；质量评估采用 5 维 100 分制（含「痛点对齐」维度），低分自动重写。
 2. **韵律弧线配音** — 全局 speed/volume/pause 曲线，从正常语速渐进到极缓极轻，模拟真人催眠节奏。
 3. **BGM 混音 + 双耳节拍（可选）** — AI 选曲 + Alpha→Theta→Delta 渐变双耳拍，输出可直接发布的成品 MP3。
-4. **站点产出** — 每期独立 SEO 页（完整文稿 + OG 封面 + PodcastEpisode schema + 上/下集导航 + 相关推荐 + 章节跳转） + 首页订阅按钮组（Apple Podcasts / Spotify / 小宇宙 / RSS 等） + 分类着陆页 + sitemap/robots/404 + MP3 内嵌 ID3 章节（Apple Podcasts 等播客 App 跨端可见）。
+4. **站点产出** — 每期独立 SEO 页（完整文稿 + OG 封面 + PodcastEpisode schema + 上/下集导航 + 相关推荐 + 章节跳转） + 首页订阅按钮组（Apple Podcasts / Spotify / 小宇宙 / RSS 等） + 分类着陆页 + sitemap/robots/404 + MP3 内嵌 ID3 章节（Apple Podcasts 等播客 App 跨端可见）+ LUFS 响度归一（跨期音量一致，避免睡眠中被惊醒）。
 5. **自动化部署** — GitHub Actions 每日 cron 生产一期 + 推 `content` 分支存音频 + 发布到 GitHub Pages。
 
 ```

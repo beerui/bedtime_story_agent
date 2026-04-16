@@ -8,3 +8,5 @@ openai>=1.0.0
 numpy>=1.20.0
 requests>=2.28.0
 mutagen>=1.47.0
+pyloudnorm>=0.1.0
+soundfile>=0.12.0
