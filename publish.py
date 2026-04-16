@@ -1267,8 +1267,31 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     <audio id="audio" preload="metadata"></audio>
 
     <script>
+    // --- Analytics event helper (tries Plausible → Umami → GA4) ---
+    function trackEvent(name, props) {{
+      try {{
+        if (window.plausible) {{ window.plausible(name, props ? {{ props }} : undefined); return; }}
+        if (window.umami) {{ window.umami.track(name, props || {{}}); return; }}
+        if (window.gtag) {{ window.gtag('event', name, props || {{}}); return; }}
+      }} catch (e) {{ /* don't block UI on analytics failures */ }}
+    }}
+
+    // Auto-track all [data-track] link clicks
+    document.addEventListener('click', function(e) {{
+      const el = e.target.closest('[data-track]');
+      if (!el) return;
+      const props = {{}};
+      for (const attr of el.attributes) {{
+        if (attr.name.startsWith('data-prop-')) {{
+          props[attr.name.slice('data-prop-'.length)] = attr.value;
+        }}
+      }}
+      trackEvent(el.dataset.track, Object.keys(props).length ? props : null);
+    }});
+
     // --- Copy RSS feed to clipboard ---
     function copyFeed(btn, url) {{
+      trackEvent('Copy RSS');
       navigator.clipboard.writeText(url).then(() => {{
         const label = btn.querySelector('.sub-label');
         const original = label.textContent;
@@ -1309,6 +1332,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     function togglePlay(btn, idx) {{
       if (currentIdx === idx && !audio.paused) {{
         audio.pause();
+        trackEvent('Pause Episode', {{ title: episodes[idx].querySelector('.ep-title').textContent }});
         showPauseState(idx, false);
         return;
       }}
@@ -1326,6 +1350,12 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         }}
         ep.classList.add('active');
         currentIdx = idx;
+        trackEvent('Play Episode', {{
+          title: ep.querySelector('.ep-title').textContent,
+          theme: ep.querySelector('.ep-theme').textContent,
+        }});
+      }} else {{
+        trackEvent('Resume Episode', {{ title: episodes[idx].querySelector('.ep-title').textContent }});
       }}
       audio.play();
       showPauseState(idx, true);
@@ -1338,6 +1368,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     }}
 
     // --- Progress ---
+    let completionFired = false;
     audio.addEventListener('timeupdate', () => {{
       if (!audio.duration) return;
       const pct = (audio.currentTime / audio.duration) * 100;
@@ -1348,7 +1379,17 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
       const sub = document.getElementById('playerSub');
       const cue = srtCues.find(c => audio.currentTime >= c.start && audio.currentTime <= c.end);
       sub.textContent = cue ? cue.text : '';
+      // fire completion event at 80% (podcast industry standard for "listened")
+      if (!completionFired && pct >= 80 && currentIdx >= 0) {{
+        completionFired = true;
+        trackEvent('Complete Episode', {{
+          title: episodes[currentIdx].querySelector('.ep-title').textContent,
+          theme: episodes[currentIdx].querySelector('.ep-theme').textContent,
+        }});
+      }}
     }});
+
+    audio.addEventListener('loadstart', () => {{ completionFired = false; }});
 
     audio.addEventListener('ended', () => {{
       showPauseState(currentIdx, false);
