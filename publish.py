@@ -242,6 +242,25 @@ def deploy_audio(episodes: list[dict], site_dir: Path) -> None:
     if tagged:
         print(f"[OK] ID3 标签 + 章节嵌入 × {tagged} 个 MP3")
 
+    # Deploy per-episode scene images (AI-generated via Pollinations, optional)
+    # Each episode's scene_1.png lives in outputs/Batch_*/scene_1.png if the user
+    # ran backfill_scenes.py or produced with non-audio-only mode. Copy to
+    # site/scenes/{folder}.png for episode pages to render as hero imagery.
+    scenes_out = site_dir / "scenes"
+    scenes_deployed = 0
+    for ep in episodes:
+        src_scene = Path(ep["audio_abs"]).parent / "scene_1.png"
+        if not src_scene.is_file():
+            continue
+        scenes_out.mkdir(parents=True, exist_ok=True)
+        dest_scene = scenes_out / f"{ep['folder']}.png"
+        if not dest_scene.is_file() or dest_scene.stat().st_mtime < src_scene.stat().st_mtime:
+            shutil.copy2(src_scene, dest_scene)
+            scenes_deployed += 1
+        ep["site_scene"] = f"scenes/{ep['folder']}.png"
+    if scenes_deployed:
+        print(f"[OK] 场景图 × {scenes_deployed} → {scenes_out}")
+
 
 def resolve_html_audio(ep: dict) -> str:
     """Path for the <audio> src in the generated HTML (relative to site/index.html)."""
@@ -1487,6 +1506,20 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     }}
     .meta {{ font-size: 0.8rem; color: var(--dim); margin-bottom: 20px; }}
     .tags {{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px; }}
+    .scene-hero {{
+      margin: -8px -20px 24px; overflow: hidden;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }}
+    .scene-hero img {{
+      width: 100%; display: block;
+      max-height: 420px; object-fit: cover; object-position: center;
+      filter: saturate(0.88);
+    }}
+    @media (max-width: 600px) {{
+      .scene-hero {{ margin: 0 -16px 20px; border-radius: 12px; }}
+      .scene-hero img {{ max-height: 280px; }}
+    }}
     .tag {{
       font-size: 0.7rem; color: var(--dim);
       background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 10px;
@@ -1706,6 +1739,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         <h1>{_esc(ep['title'])}</h1>
         <div class="meta">{ep['timestamp'].strftime('%Y-%m-%d')} · {ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</div>
         <div class="tags">{tags_html}</div>
+        {'<div class="scene-hero"><img src="../' + _esc(ep["site_scene"]) + '" alt="" loading="lazy"></div>' if ep.get("site_scene") else ''}
 
         <div class="player">
           <div class="player-controls">

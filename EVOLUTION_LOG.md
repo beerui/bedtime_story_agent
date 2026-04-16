@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-04-17] 每期 hero 场景图：用 Pollinations.ai 免费 AI 配图 (backfill_scenes.py + publish.py)
+**动因**: 22 期都用 `--audio-only` 生产，没有场景图。但 engine.py 本就有 `generate_multi_images` 通过 Pollinations.ai（免费，无需 API key）生成主题图的逻辑，只是没用上。场景图作为单期页 hero 视觉，会大大拉高页面"用心感"
+**实现**:
+1. `backfill_scenes.py` 新增：遍历 outputs/Batch_*/，对缺 scene_1.png 的期用 engine.generate_multi_images 按 theme.image_prompt 生成 1024x1792 竖图（Pollinations 免费，每张 10-60s）
+   - `--dry-run` 列出而不生成
+   - `--only substr` 过滤主题
+   - `--limit N` 限数量
+   - `--sleep 3` 期间节流避免频率限制
+2. `publish.deploy_audio` 扩展：除了音频 + ID3，还扫每期的 scene_1.png copy 到 `site/scenes/{folder}.png`，用 `ep["site_scene"]` 标记可用
+3. 单期页模板：tags 行下方、player 之前新增 `<div class="scene-hero"><img .../></div>` 仅在 `site_scene` 存在时渲染
+4. CSS：hero 图圆角+阴影+max-height 420px（移动端 280px），`filter: saturate(0.88)` 让助眠内容视觉不过分鲜艳
+5. `loading="lazy"` 减少初始请求
+**验证**: 
+- backfill 在后台持续跑（Pollinations 免费但慢，预期 ~15 分钟完成 22 期）
+- publish.py 已识别前 4 张生成完毕的图，copy 到 site/scenes/，单期页正确渲染 scene-hero
+- 无场景图的期不破坏布局（条件渲染）
+**下一步**:
+- 已有 `og/` 1200x630 横图（社交分享）+ `covers/` 1400x1400 方图（播客 itunes:image）+ `scenes/` 1024x1792 竖图（hero）——三种比例覆盖全部展示场景
+- 场景图未来可以做滚动视差、模糊上半部分叠文字等视觉升级
+- Pollinations 可能断续，backfill 可加 resume 模式跳过已失败项
+
 ## [2026-04-17] validate.py 加响度窗口检查：防止未来响度退化 (validate.py)
 **动因**: 上轮做了 LUFS 归一把 22 期压进 [-26.1, -25.6] 跨度 0.5dB。但如果将来有人：(a) 把 `NORMALIZE_LUFS` 设成极端值 / (b) 关掉归一直接合成 / (c) 用老版本 engine——新期音频会脱离目标窗口，没有工具会报。validate.py 只查结构完整性，音频是黑盒
 **实现**:
