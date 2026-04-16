@@ -4,6 +4,31 @@
 
 ---
 
+## [2026-04-17] launch.py 启动前诊断：把分散文档变成一条命令 (launch.py + README)
+**动因**: 32 轮迭代下来功能齐全但**用户配置/部署动作分散在 3 个文档里**（README + GITHUB_ACTIONS_SETUP + SUBMIT_PODCAST）。用户打开 repo 面对大量信息，"我到底该做什么"不是一眼能看到的。给一条命令：`python3 launch.py` → 一屏告知当前所有状态 + 下一步具体动作
+**实现**:
+1. 新增 `launch.py`，10 项 read-only 检查：
+   - Git remote（origin 是否 GitHub）
+   - `.env` 的 DASHSCOPE_API_KEY（存在 + 非占位）
+   - `monetization.json`（site_url / contact_email 非占位）
+   - `outputs/` 有几期
+   - `site/` 有核心产出
+   - origin/content 分支存在
+   - `gh` CLI 装 + 登录状态
+   - 仓库 Secrets 里 DASHSCOPE_API_KEY（通过 `gh secret list`）
+   - GitHub Pages 配置（通过 `gh api repos/.../pages`）
+   - 最近 Actions 运行成败（通过 `gh run list`）
+2. 每项输出 🟢（就绪）/ 🟡（可选建议）/ 🔴（必须处理），带 detail + next_step
+3. 末尾找第一个 🔴 blocker 作为"下一步必须"——如果没 blocker 就找第一个 🟡；如果全绿则说"已上线"
+4. 不自动执行——纯 read-only 诊断，避免误操作
+5. `gh` CLI 可选：装了能深度检查 Secrets/Pages，没装则 fallback 到"去 URL 手动确认"
+6. README 开头加 `🚀 快速上线` 章节，引流到 `python3 launch.py`
+**验证**: 当前状态下 launch.py 正确识别唯一 blocker 是 **GitHub Pages 未开启**——用户只需要点一个 URL 即可 unblock，比读 3 个 README 高效得多
+**下一步**:
+- launch.py 可加 `--fix` 模式，对无危险的项自动修（如建 monetization.json from example）
+- 集成到 CI：PR 作者打开 diff 时可以跑 launch 看仓库状态
+- 考虑 `launch.py --submit apple` 自动打开 Apple Podcasts Connect + 预填 RSS URL 到剪贴板
+
 ## [2026-04-17] doctor.py 全站静态健康诊断 (doctor.py + ci.yml)
 **动因**: 31 轮功能推下来累积了大量模板/资源/结构化数据，从未系统验证整体健康度——可能有未被替换的 f-string 占位符、断的相对链接、JSON-LD 语法错、RSS/manifest 解析失败等。tests/ 单测覆盖 helper 函数层，但整站产出是否 coherent 是另一个层次
 **实现**:
