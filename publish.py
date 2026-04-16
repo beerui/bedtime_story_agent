@@ -263,35 +263,72 @@ def resolve_rss_audio(ep: dict, base_url: str) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_rss(episodes: list[dict], base_url: str,
-                  category_key: str = "", category_cfg: dict | None = None) -> str:
-    """Generate a Podcast RSS 2.0 XML feed.
+                  category_key: str = "", category_cfg: dict | None = None,
+                  monetization: dict | None = None) -> str:
+    """Generate a Podcast RSS 2.0 XML feed compliant with Apple Podcasts
+    Connect submission requirements (iTunes namespace).
 
     When category_key+category_cfg are given, produces a filtered feed covering
     only episodes whose theme belongs to that category. Channel title/description
     are customized for the category so podcast apps render distinct feeds."""
-    ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
-    CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
-    ET.register_namespace("itunes", ITUNES_NS)
-    ET.register_namespace("content", CONTENT_NS)
+    ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
+    CONTENT = "{http://purl.org/rss/1.0/modules/content/}"
+    ET.register_namespace("itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
+    ET.register_namespace("content", "http://purl.org/rss/1.0/modules/content/")
 
     rss = ET.Element("rss", version="2.0")
-
     channel = ET.SubElement(rss, "channel")
+
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    # Apple Podcasts requires a 1400-3000px square cover PNG/JPG. We ship it
+    # at site/podcast-cover.png (see publish.main).
+    cover_url = f"{site_url}/podcast-cover.png" if site_url else "podcast-cover.png"
+    contact_email = (((m.get("social") or {}).get("contact_email") or "").strip()
+                     or "hello@bedtime.local")
+
     if category_key and category_cfg:
         cat_label = category_cfg.get("label", category_key)
-        ET.SubElement(channel, "title").text = f"{PODCAST_TITLE} · {cat_label}"
-        ET.SubElement(channel, "description").text = category_cfg.get("description", PODCAST_DESC)
-        link = f"{base_url.rstrip('/')}/category/{category_key}.html" if base_url else "index.html"
+        channel_title = f"{PODCAST_TITLE} · {cat_label}"
+        channel_desc = category_cfg.get("description", PODCAST_DESC)
+        channel_link = f"{site_url}/category/{category_key}.html" if site_url else "index.html"
     else:
-        ET.SubElement(channel, "title").text = PODCAST_TITLE
-        ET.SubElement(channel, "description").text = PODCAST_DESC
-        link = base_url or "https://example.com"
+        channel_title = PODCAST_TITLE
+        channel_desc = PODCAST_DESC
+        channel_link = site_url or "https://example.com"
+
+    ET.SubElement(channel, "title").text = channel_title
+    ET.SubElement(channel, "description").text = channel_desc
     ET.SubElement(channel, "language").text = PODCAST_LANG
-    ET.SubElement(channel, "link").text = link
-    ET.SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}author").text = PODCAST_AUTHOR
-    ET.SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}explicit").text = "no"
-    cat = ET.SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}category")
-    cat.set("text", "Health & Fitness")
+    ET.SubElement(channel, "link").text = channel_link
+
+    # iTunes-namespace channel tags (Apple Podcasts required set)
+    ET.SubElement(channel, f"{ITUNES}author").text = PODCAST_AUTHOR
+    ET.SubElement(channel, f"{ITUNES}summary").text = channel_desc
+    ET.SubElement(channel, f"{ITUNES}explicit").text = "no"
+    ET.SubElement(channel, f"{ITUNES}type").text = "episodic"
+
+    img = ET.SubElement(channel, f"{ITUNES}image")
+    img.set("href", cover_url)
+
+    owner = ET.SubElement(channel, f"{ITUNES}owner")
+    ET.SubElement(owner, f"{ITUNES}name").text = PODCAST_AUTHOR
+    ET.SubElement(owner, f"{ITUNES}email").text = contact_email
+
+    # Primary category + sub-category for health/wellness podcasts
+    cat_elem = ET.SubElement(channel, f"{ITUNES}category")
+    cat_elem.set("text", "Health & Fitness")
+    sub = ET.SubElement(cat_elem, f"{ITUNES}category")
+    sub.set("text", "Mental Health")
+
+    # Atom-style self link for feedburner validators
+    atom_link = ET.SubElement(channel, "{http://www.w3.org/2005/Atom}link")
+    feed_self = f"{site_url}/feed.xml" if site_url else "feed.xml"
+    if category_key:
+        feed_self = f"{site_url}/feed/{category_key}.xml" if site_url else f"feed/{category_key}.xml"
+    atom_link.set("href", feed_self)
+    atom_link.set("rel", "self")
+    atom_link.set("type", "application/rss+xml")
 
     # Filter episodes if category_key given
     if category_key:
@@ -300,7 +337,7 @@ def generate_rss(episodes: list[dict], base_url: str,
             if (_THEMES.get(e.get("theme")) or {}).get("category") == category_key
         ]
 
-    for ep in episodes:
+    for idx, ep in enumerate(episodes):
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = ep["title"]
         ET.SubElement(item, "description").text = ep["description"]
@@ -312,9 +349,19 @@ def generate_rss(episodes: list[dict], base_url: str,
         enc.set("length", str(ep["audio_size"]))
         enc.set("type", "audio/mpeg")
 
-        dur = ET.SubElement(item, "{http://www.itunes.com/dtds/podcast-1.0.dtd}duration")
-        m, s = divmod(ep["duration"], 60)
-        dur.text = f"{m}:{s:02d}"
+        dur = ET.SubElement(item, f"{ITUNES}duration")
+        mm, ss = divmod(ep["duration"], 60)
+        dur.text = f"{mm}:{ss:02d}"
+
+        # iTunes-namespace per-episode metadata
+        ET.SubElement(item, f"{ITUNES}summary").text = ep["description"]
+        ET.SubElement(item, f"{ITUNES}author").text = PODCAST_AUTHOR
+        ET.SubElement(item, f"{ITUNES}episodeType").text = "full"
+        ET.SubElement(item, f"{ITUNES}explicit").text = "no"
+        # Per-episode square cover (generated by covers.py — OG is landscape,
+        # but Apple accepts it when episode-level; use site cover as safe default)
+        ep_img = ET.SubElement(item, f"{ITUNES}image")
+        ep_img.set("href", cover_url)
 
         ET.SubElement(item, "guid", isPermaLink="false").text = ep["folder"]
 
@@ -4067,6 +4114,12 @@ def main():
             if _covers.generate_episode_cover(ep, out):
                 generated += 1
         print(f"[OK] OG 封面 → {og_dir}（新生成 {generated} 张，共 {len(episodes) + 1} 张）")
+        # Square podcast cover for Apple Podcasts / Spotify submission
+        pc_path = SITE_DIR / "podcast-cover.png"
+        if not pc_path.is_file():
+            tagline = (monetization or {}).get("brand_tagline") or "每晚 10 分钟 · AI 助眠"
+            if _covers.generate_podcast_cover(pc_path, tagline=tagline):
+                print(f"[OK] 播客方形封面（1400x1400） → {pc_path}")
     else:
         print("[skip] OG 封面未生成（Pillow 未安装；pip install Pillow 启用）")
 
@@ -4134,7 +4187,7 @@ def main():
         print(f"[OK] 主题总览 → {SITE_DIR / 'themes.html'}")
 
     # generate RSS feed
-    rss = generate_rss(episodes, args.base_url)
+    rss = generate_rss(episodes, args.base_url, monetization=monetization)
     rss_path = SITE_DIR / "feed.xml"
     rss_path.write_text(rss, encoding="utf-8")
     print(f"[OK] RSS 订阅源 → {rss_path}")
@@ -4148,7 +4201,7 @@ def main():
             cat_cfg = _THEME_CATEGORIES.get(cat_key)
             if not cat_cfg:
                 continue
-            cat_rss = generate_rss(episodes, args.base_url, cat_key, cat_cfg)
+            cat_rss = generate_rss(episodes, args.base_url, cat_key, cat_cfg, monetization=monetization)
             (feed_dir / f"{cat_key}.xml").write_text(cat_rss, encoding="utf-8")
             feeds_written += 1
         if feeds_written:

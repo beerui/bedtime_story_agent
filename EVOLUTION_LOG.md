@@ -4,6 +4,36 @@
 
 ---
 
+## [2026-04-17] Apple Podcasts 提交就绪：完整 iTunes RSS + 1400x1400 方形封面 (covers.py + publish.py + validate.py)
+**动因**: 主 RSS feed.xml 的 `<itunes:*>` 标签不完整——缺 owner/image/type/summary/subcategory 等 Apple Podcasts 提交时必检的 tag；也没有 1400x1400 方形封面（Apple 要求 1400-3000px 方图、<500KB、无透明）。按现状提交 Apple Podcasts Connect 会被自动拒
+**实现**:
+1. `covers.generate_podcast_cover(path, size=1400, tagline)`：
+   - 1400x1400 RGB PNG，~200KB（限 500KB 内）
+   - 深紫金渐变 + 径向中心压暗 + 密集星点（thumbnail grid 需要视觉密度）
+   - 顶部 `BEDTIME STORY` 暖金 pill
+   - 中心大字「助眠电台」带软阴影 + 下方 tagline
+   - 底部 `bedtime.fm` 水印（未来换成真实域名）
+2. `generate_rss` 补全 iTunes 必需标签：
+   - Channel：`itunes:author/summary/explicit/type(episodic)/image/owner(name+email)/category + subcategory(Mental Health)` + Atom `<link rel="self">`
+   - Item：`itunes:summary/author/episodeType(full)/explicit/image/duration`
+   - Owner email 从 `monetization.social.contact_email` 读，没配用 `hello@bedtime.local` 占位
+   - 分类 RSS 同步用新版 generate_rss
+3. `publish.py main()` 产出 `site/podcast-cover.png`（只在 Pillow 可用 + 文件不存在时生成，幂等）
+4. `validate.check_rss_compliance`：
+   - 检查必需 `itunes:*` 标签（warning 级别）
+   - 检测 owner email 是占位符（含 "你的域名" 或 ".local" 后缀）
+   - 校验 podcast-cover.png 尺寸（<1400x1400 warning、非方图 warning、>500KB info）
+   - 只在 `site/feed.xml` 存在时跑（publish 未跑不影响）
+**验证**: 
+- feed.xml 含完整 iTunes 标签，owner/image/type/category+subcategory/Atom self-link 齐全 ✓
+- podcast-cover.png 1400x1400 200KB RGB 无透明 ✓
+- validate RSS 合规仅 1 warning（owner email 占位），其他全合规
+- README 站点结构更新，新增 podcast-cover.png / icons 等条目
+**下一步**:
+- 用户填 monetization.json 的 contact_email 后那条 warning 自动消失，即可直接 Apple Podcasts Connect 提交
+- 小宇宙、Spotify for Podcasters、Overcast Store 等其他平台的提交要求略不同，可加 `docs/SUBMIT_PODCAST.md` 给逐步指南
+- 可以生成 Retina 版本（2800x2800）用于平台显示放大；当前 1400 是最小合规
+
 ## [2026-04-17] LUFS 响度归一：跨期音量一致 (audio_fx.py + engine.py + backfill_loudness.py)
 **动因**: 审计 22 期响度发现 **7.6 dB 跨度**（-33.2 到 -25.6 LUFS）。睡眠场景对响度突变极敏感——听众在期 A 调好音量后切到期 B 可能突然变响或变闷，频繁的音量调整会破坏入睡状态。这是产品级的听感体验问题
 **实现**:

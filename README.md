@@ -37,8 +37,12 @@ site/                    # 可直接部署到 GitHub Pages / Vercel / Netlify
 ├── episodes/*.html      # 每期独立长文页（SEO 长尾 + 心理技术徽章 + 章节导航 + 倍速+睡眠定时器 + 下载按钮）
 ├── episodes/*.txt       # 每期纯文本文稿（剥除韵律标记，可下载离线阅读）
 ├── episodes.json        # 机器可读的全部节目清单（3 方嵌入/聚合器/未来移动端 API）
-├── audio/*.mp3          # 扁平化音频
+├── audio/*.mp3          # 扁平化音频（已 LUFS 响度归一 ~-25.7，跨期一致）
 ├── og/*.png             # 1200x630 社交分享封面
+├── podcast-cover.png    # 1400x1400 播客方形封面（Apple Podcasts / Spotify 提交用）
+├── icons/*.png          # PWA 图标（192/512/maskable）
+├── manifest.webmanifest # PWA 清单
+├── sw.js                # service worker
 ├── sitemap.xml          # 搜索引擎索引
 └── robots.txt
 ```

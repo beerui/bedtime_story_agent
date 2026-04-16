@@ -244,6 +244,121 @@ def generate_home_cover(out_path: Path, tagline: str = "每晚 10 分钟 · AI �
     return True
 
 
+def generate_podcast_cover(out_path: Path, size: int = 1400,
+                            tagline: str = "每晚 10 分钟 · AI 助眠") -> bool:
+    """Render a square podcast cover for Apple Podcasts / Spotify / 小宇宙 submission.
+
+    Apple requires 1400-3000 px square PNG/JPEG, <500KB, RGB, no transparency.
+    This renders at 1400px (safe default) with large centered title + tagline +
+    brand badge — same visual language as OG covers but in portrait-safe layout
+    so it works as thumbnail in podcast catalog grids."""
+    if not _HAS_PIL:
+        return False
+    rng = random.Random(_seed_from("podcast-cover"))
+
+    # Gradient background
+    img = Image.new("RGB", (size, size), (6, 6, 26))
+    px = img.load()
+    base_hue = 260 / 360.0
+    warm_hue = 40 / 360.0
+    for y in range(size):
+        for x in range(size):
+            # Diagonal blend with radial center dip
+            t = (x + y) / (size * 2)
+            dx = (x - size / 2) / size
+            dy = (y - size / 2) / size
+            r = (dx * dx + dy * dy) ** 0.5
+            mid_weight = max(0.0, 1.0 - r * 1.8)
+            c1 = _hsl_to_rgb(base_hue, 0.5, 0.14)
+            c2 = _hsl_to_rgb(warm_hue, 0.6, 0.20)
+            c0 = (6, 6, 26)
+            gr = int(c1[0] * (1 - t) + c2[0] * t)
+            gg = int(c1[1] * (1 - t) + c2[1] * t)
+            gb = int(c1[2] * (1 - t) + c2[2] * t)
+            rr = int(gr * (1 - mid_weight * 0.55) + c0[0] * (mid_weight * 0.55))
+            rgg = int(gg * (1 - mid_weight * 0.55) + c0[1] * (mid_weight * 0.55))
+            rb = int(gb * (1 - mid_weight * 0.55) + c0[2] * (mid_weight * 0.55))
+            px[x, y] = (rr, rgg, rb)
+
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Star field (denser than home cover — thumbnail visual richness)
+    for _ in range(int(size / 8)):
+        cx = rng.randint(0, size - 1)
+        cy = rng.randint(0, size - 1)
+        rad = rng.randint(1, max(2, size // 280))
+        alpha = rng.randint(90, 220)
+        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=(255, 255, 255, alpha))
+
+    # Accent corner arcs
+    draw.ellipse([size * 0.62, size * 0.62, size * 1.1, size * 1.1], fill=(124, 111, 247, 50))
+    draw.ellipse([-size * 0.1, -size * 0.1, size * 0.3, size * 0.3], fill=(240, 194, 127, 35))
+
+    # Badge (top)
+    badge = "BEDTIME STORY"
+    badge_font = _load_font(max(22, size // 40))
+    try:
+        bbox = draw.textbbox((0, 0), badge, font=badge_font)
+        bw = bbox[2] - bbox[0]
+        bh = bbox[3] - bbox[1]
+    except AttributeError:
+        bw, bh = draw.textsize(badge, font=badge_font)
+    pad = size // 60
+    bx1 = (size - bw) // 2 - pad * 2
+    by1 = size // 5
+    bx2 = bx1 + bw + pad * 4
+    by2 = by1 + bh + pad * 2
+    draw.rounded_rectangle([bx1, by1, bx2, by2], radius=size // 40,
+                           fill=(124, 111, 247, 70),
+                           outline=(124, 111, 247, 180), width=max(2, size // 600))
+    draw.text((bx1 + pad * 2, by1 + pad - 4), badge, font=badge_font,
+              fill=(240, 194, 127, 255))
+
+    # Title (center, large)
+    title = "助眠电台"
+    title_font = _load_font(max(160, size // 6))
+    try:
+        bbox = draw.textbbox((0, 0), title, font=title_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        tx = (size - tw) // 2 - bbox[0]
+        # Shift up slightly (title is visually heavy with descenders below baseline)
+        ty = (size - th) // 2 - size // 20 - bbox[1]
+    except AttributeError:
+        tw, th = draw.textsize(title, font=title_font)
+        tx = (size - tw) // 2
+        ty = (size - th) // 2 - size // 20
+    # Soft shadow first
+    draw.text((tx + 4, ty + 4), title, font=title_font, fill=(0, 0, 0, 120))
+    draw.text((tx, ty), title, font=title_font, fill=(240, 240, 250, 255))
+
+    # Tagline (under title)
+    sub_font = _load_font(max(36, size // 28))
+    try:
+        bbox = draw.textbbox((0, 0), tagline, font=sub_font)
+        sw = bbox[2] - bbox[0]
+    except AttributeError:
+        sw, _ = draw.textsize(tagline, font=sub_font)
+    sx = (size - sw) // 2
+    sy = ty + th + size // 30
+    draw.text((sx, sy), tagline, font=sub_font, fill=(200, 200, 220, 230))
+
+    # Footer "BEDTIME.FM" or GitHub URL — simple text at bottom
+    footer = "bedtime.fm"  # aspirational placeholder
+    footer_font = _load_font(max(22, size // 50))
+    try:
+        bbox = draw.textbbox((0, 0), footer, font=footer_font)
+        fw = bbox[2] - bbox[0]
+    except AttributeError:
+        fw, _ = draw.textsize(footer, font=footer_font)
+    draw.text(((size - fw) // 2, size - size // 12), footer,
+              font=footer_font, fill=(160, 160, 190, 200))
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path, "PNG", optimize=True)
+    return True
+
+
 def generate_pwa_icon(out_path: Path, size: int = 512, maskable: bool = False) -> bool:
     """Generate a square PWA icon. When maskable=True, leaves extra padding so
     the icon survives being cropped to various round/square masks on different
