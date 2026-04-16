@@ -4,6 +4,21 @@
 
 ---
 
+## [2026-04-17] 订阅转化漏斗：首页订阅按钮组 (publish.py)
+**动因**: 前 3 轮让站点可部署、有 SEO、有单期页、有相关推荐，但访客看完一期后**没有地方订阅**——RSS 只在 `<link rel="alternate">` 里（普通人不知道怎么用）。用户每次要主动搜索才能回来，长尾留存直接断掉
+**实现**:
+1. `_build_subscribe_html()` 渲染订阅按钮组：Apple Podcasts / Spotify / 小宇宙 / Overcast / Bilibili / RSS / 复制 RSS，平台 URL 未配置则按钮隐藏，RSS + 复制 永远显示
+2. Apple Podcasts 智能回退：用户若未填 `apple_podcasts_url`，代码会用 `podcasts://feed-url` 协议自动生成——iOS/macOS 点击直接唤起 Apple Podcasts App 订阅，**不需要提交到 Apple 目录**；但要判断 URL 是否为真实域名（过滤 `你的域名` 和 `example.com` 等占位），避免占位 URL 把按钮造成死链
+3. monetization.example.json 新增 `subscribe` 块，5 个平台 URL 占位 + hint 文案
+4. 首页 `<header>` 和 `<main>` 之间注入订阅区，渐变紫+暖金背景、pill 按钮、悬停位移
+5. 「复制 RSS」用 `navigator.clipboard.writeText`，按钮文字瞬变「已复制」1.6s 后恢复
+6. 修复了 site_url 优先级 bug：之前 `m.get("site_url") or base_url` 让 CLI 的 `--base-url` 被配置覆盖；现在统一 `base_url or m.get("site_url")`，CLI 永远能覆盖
+**验证**: 配 `--base-url https://beerui.github.io/bedtime_story_agent`，生成 3 个按钮（Apple Podcasts / RSS / 复制 RSS），href 全部指向真实域名的 feed.xml；Apple Podcasts 用 `podcasts://` 协议；复制按钮 JS 无引号嵌套 bug
+**下一步**:
+- 首页订阅区可再加「📧 邮件订阅」按钮，对接 Buttondown/Substack 等免费服务
+- 订阅按钮目前是静态的，可以埋 `data-platform` 属性 + 对应事件，让用户看到「哪个按钮被点得最多」
+- 更长期：把订阅按钮做成 sticky header（滚动后仍可见），最大化曝光
+
 ## [2026-04-16] 内部链接与可度量性 (publish.py + monetization)
 **动因**: 单期页上线能被 Google 索引了，但（a）用户读完就离开——没有下一集提示、没有相关推荐，单页停留时长就是变现的天花板；（b）整个项目**没有任何数据**——不知道哪期流量大、哪个变现位有效、哪里在漏斗里流失
 **实现**:

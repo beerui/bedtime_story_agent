@@ -264,6 +264,67 @@ def _esc(s: str) -> str:
     return html_mod.escape(s or "", quote=True)
 
 
+def _build_subscribe_html(m: dict, feed_url: str) -> str:
+    """Subscription buttons row — the primary CTA on the homepage.
+
+    Renders RSS + 复制 RSS always; platform buttons only when their URL is set
+    in monetization.json → subscribe.{platform}_url."""
+    sub = (m or {}).get("subscribe") or {}
+    feed_url = feed_url or "feed.xml"
+    # Apple Podcasts: prefer explicit URL; otherwise auto-generate podcasts:// only when
+    # feed_url looks like a real site (not the placeholder 你的域名.com)
+    podcasts_href = sub.get("apple_podcasts_url") or ""
+    if not podcasts_href and feed_url.startswith(("http://", "https://")):
+        if "你的域名" not in feed_url and "example.com" not in feed_url:
+            podcasts_href = "podcasts://" + feed_url.split("://", 1)[1]
+
+    buttons: list[str] = []
+    if podcasts_href:
+        buttons.append(
+            f'<a class="sub-btn sub-apple" href="{_esc(podcasts_href)}" target="_blank" rel="noopener">'
+            f'<span class="sub-logo">🎧</span><span class="sub-label">Apple Podcasts</span></a>'
+        )
+    if sub.get("spotify_url"):
+        buttons.append(
+            f'<a class="sub-btn sub-spotify" href="{_esc(sub["spotify_url"])}" target="_blank" rel="noopener">'
+            f'<span class="sub-logo">🎵</span><span class="sub-label">Spotify</span></a>'
+        )
+    if sub.get("xiaoyuzhou_url"):
+        buttons.append(
+            f'<a class="sub-btn sub-xyz" href="{_esc(sub["xiaoyuzhou_url"])}" target="_blank" rel="noopener">'
+            f'<span class="sub-logo">🌙</span><span class="sub-label">小宇宙</span></a>'
+        )
+    if sub.get("overcast_url"):
+        buttons.append(
+            f'<a class="sub-btn sub-overcast" href="{_esc(sub["overcast_url"])}" target="_blank" rel="noopener">'
+            f'<span class="sub-logo">🔆</span><span class="sub-label">Overcast</span></a>'
+        )
+    if sub.get("bilibili_url"):
+        buttons.append(
+            f'<a class="sub-btn sub-bili" href="{_esc(sub["bilibili_url"])}" target="_blank" rel="noopener">'
+            f'<span class="sub-logo">📺</span><span class="sub-label">Bilibili</span></a>'
+        )
+    # always show RSS + copy
+    buttons.append(
+        f'<a class="sub-btn sub-rss" href="{_esc(feed_url)}" target="_blank" rel="noopener">'
+        f'<span class="sub-logo">📡</span><span class="sub-label">RSS</span></a>'
+    )
+    buttons.append(
+        f"<button class=\"sub-btn sub-copy\" onclick='copyFeed(this, {json.dumps(feed_url, ensure_ascii=False)})'>"
+        f'<span class="sub-logo">📋</span><span class="sub-label">复制 RSS</span></button>'
+    )
+
+    hint = sub.get("hint") or "订阅后每期新内容会自动推送到你的播客 App"
+    return textwrap.dedent(f"""
+    <section class="subscribe">
+      <div class="sub-title">订阅收听</div>
+      <div class="sub-row">
+        {''.join(buttons)}
+      </div>
+      <div class="sub-hint">{_esc(hint)}</div>
+    </section>""")
+
+
 def _build_support_html(m: dict) -> str:
     """Render the 支持电台 block (donation / sponsor / affiliates / premium)."""
     if not m:
@@ -345,7 +406,7 @@ def _build_support_html(m: dict) -> str:
 
 
 def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
-    site_url = (m.get("site_url") or base_url or "").rstrip("/")
+    site_url = (base_url or (m or {}).get("site_url") or "").rstrip("/")
     tagline = _esc(m.get("brand_tagline") or PODCAST_DESC)
     og_url = site_url or ""
     feed_url = f"{site_url}/feed.xml" if site_url else "feed.xml"
@@ -511,7 +572,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     episode-specific OG/JSON-LD metadata so social shares and search engines
     get proper previews."""
     m = monetization or {}
-    site_url = (m.get("site_url") or base_url or "").rstrip("/")
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
     page_path = f"episodes/{_episode_slug(ep)}.html"
     canonical = f"{site_url}/{page_path}" if site_url else page_path
     # audio path: episode pages live in site/episodes/, audio in site/audio/ → ../audio/
@@ -867,6 +928,9 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     total_dur = sum(e["duration"] for e in episodes)
     support_html = _build_support_html(monetization)
     head_meta = _build_head_meta(episodes, monetization, base_url)
+    site_url = (base_url or (monetization or {}).get("site_url") or "").rstrip("/")
+    absolute_feed = f"{site_url}/feed.xml" if site_url else "feed.xml"
+    subscribe_html = _build_subscribe_html(monetization or {}, absolute_feed)
 
     return textwrap.dedent(f"""\
     <!DOCTYPE html>
@@ -1030,6 +1094,45 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
       header h1 {{ font-size: 1.4rem; }}
     }}
 
+    /* --- subscribe row (primary CTA, above the fold) --- */
+    .subscribe {{
+      margin: 0 0 36px;
+      padding: 20px 22px;
+      background: linear-gradient(135deg, rgba(124,111,247,0.08), rgba(240,194,127,0.05));
+      border: 1px solid rgba(124,111,247,0.15);
+      border-radius: 16px;
+    }}
+    .sub-title {{
+      font-size: 0.78rem; color: var(--warm);
+      letter-spacing: 0.15em; text-transform: uppercase;
+      margin-bottom: 12px;
+    }}
+    .sub-row {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .sub-btn {{
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 22px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      font-size: 0.78rem; font-family: inherit;
+      cursor: pointer; transition: all 0.25s ease;
+    }}
+    .sub-btn:hover {{
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(124,111,247,0.4);
+      color: var(--accent);
+      transform: translateY(-1px);
+    }}
+    .sub-btn.copied {{
+      border-color: var(--warm);
+      color: var(--warm);
+    }}
+    .sub-logo {{ font-size: 1rem; line-height: 1; }}
+    .sub-hint {{
+      font-size: 0.7rem; color: var(--text-dim);
+      margin-top: 10px; line-height: 1.5;
+    }}
+
     /* --- support / monetization --- */
     .support, .affiliates {{
       margin-top: 48px;
@@ -1106,6 +1209,8 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         </div>
       </header>
 
+      {subscribe_html}
+
       <main id="episodes">
         {cards_html}
       </main>
@@ -1144,6 +1249,20 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     <audio id="audio" preload="metadata"></audio>
 
     <script>
+    // --- Copy RSS feed to clipboard ---
+    function copyFeed(btn, url) {{
+      navigator.clipboard.writeText(url).then(() => {{
+        const label = btn.querySelector('.sub-label');
+        const original = label.textContent;
+        label.textContent = '已复制';
+        btn.classList.add('copied');
+        setTimeout(() => {{
+          label.textContent = original;
+          btn.classList.remove('copied');
+        }}, 1600);
+      }}).catch(() => {{ alert('请手动复制: ' + url); }});
+    }}
+
     // --- Starfield ---
     (function() {{
       const c = document.getElementById('stars');

@@ -2,6 +2,15 @@
   "_comment": "复制为 monetization.json 并填入真实链接，publish.py 会自动读取并在站点底部渲染变现板块。所有字段均可选；省略的块不会显示。",
   "site_url": "https://你的域名.com",
   "brand_tagline": "每晚 10 分钟，被温柔的声音带入梦境",
+  "subscribe": {
+    "_comment": "各平台订阅链接。Apple Podcasts 可用 podcasts://你的feed.xml 协议直接唤起 App 订阅（需站点已部署且 RSS URL 可公网访问）。留空不会显示按钮，RSS 按钮始终显示",
+    "apple_podcasts_url": "",
+    "spotify_url": "",
+    "xiaoyuzhou_url": "",
+    "overcast_url": "",
+    "bilibili_url": "",
+    "hint": "订阅后每期新内容会自动推送到你的播客 App"
+  },
   "donation": {
     "enabled": true,
     "label": "请我喝杯助眠茶",
