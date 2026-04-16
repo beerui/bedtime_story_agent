@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-04-17] 分类 RSS：按兴趣分组订阅 (publish.py)
+**动因**: 22 期混在主 feed.xml 里，订阅用户被迫接收全部主题——想要纯心理学技术的和想要时代痛点的是不同人群。播客应用（Apple Podcasts / Pocket Casts / 小宇宙）都支持多 feed 并列，按兴趣分组订阅是标配体验
+**实现**:
+1. `generate_rss(episodes, base_url, category_key, category_cfg)` 扩展支持过滤：传 category_key 时按 `_THEMES[theme].category == cat_key` 过滤 episodes，channel title 改为「PODCAST_TITLE · 分类标签」，description 用 category.description，link 指向分类页
+2. `main()` 生成 4 个 `site/feed/{cat_key}.xml`（只为有节目的分类生成）
+3. 分类页 head 加 `<link rel="alternate" type="application/rss+xml">`——播客客户端能自动发现
+4. 分类页 header 加「订阅本分类 RSS」UI block：打开 feed.xml 链接 + 复制 URL 按钮（写绝对 URL 到剪贴板，便于粘贴到 Apple Podcasts「通过 URL 添加节目」等入口）；复制后按钮变暖金 1.6s
+5. sitemap 新增 4 条 feed URL（priority 0.6）——让搜索引擎知道这些 RSS 存在
+**验证**: 4 feed 生成，条目数分别为 zeitgeist_2026=6 / clinical_technique=4 / emotional_resonance=4 / nature_relax=8，合计 22 ✓ 与总数一致；每个 channel title 含正确分类标签；分类页 UI 可交互
+**下一步**:
+- 分类 RSS URL 可以进一步在 About 页或订阅区以 pill 形式列出（目前要点进分类页才能发现）
+- 可考虑按「更新频率」再分：每周一期（zeitgeist）/ 每天一期（nature_relax）等——前提是 batch.py 支持按分类定 cron
+- 主 feed 也可以标注 `<itunes:category>` 层级，让 Apple Podcasts 能正确归类
+
 ## [2026-04-17] 章节标题从「引入/深入/尾声」升级为具象画面 (engine.py + publish.py + backfill_chapter_titles.py)
 **动因**: Apple Podcasts 里每期章节都是一模一样的「引入/深入/尾声」，三个通用标签不区分任何期内容。用户滑过 chapter list 看不到差别——等于没有章节。专业播客（NPR / The Daily / 小宇宙 top 榜）每个章节名都是具体的，这是内容差异化的核心视觉
 **实现**:

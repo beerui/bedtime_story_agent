@@ -28,11 +28,12 @@ site/                    # 可直接部署到 GitHub Pages / Vercel / Netlify
 ├── faq.html             # 常见问题（含 FAQPage JSON-LD，争取 Google rich results）
 ├── themes.html          # 18 主题总览 hub（4 分类分组）
 ├── theme/*.html         # 18 个主题着陆页（pain_point/technique 聚焦 + 本主题所有节目）
-├── category/*.html      # 4 个分类着陆页（按 SEO 意图独立打关键词）
+├── category/*.html      # 4 个分类着陆页（按 SEO 意图独立打关键词，每页附分类 RSS 入口）
+├── feed.xml             # Podcast RSS 2.0（全部节目）
+├── feed/*.xml           # 4 个分类 RSS（订阅者可按主题分组订阅）
 ├── episodes/*.html      # 每期独立长文页（SEO 长尾 + 心理技术徽章 + 章节导航 + 倍速+睡眠定时器）
 ├── audio/*.mp3          # 扁平化音频
 ├── og/*.png             # 1200x630 社交分享封面
-├── feed.xml             # Podcast RSS 2.0
 ├── sitemap.xml          # 搜索引擎索引
 └── robots.txt
 ```

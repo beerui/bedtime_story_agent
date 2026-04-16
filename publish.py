@@ -262,8 +262,13 @@ def resolve_rss_audio(ep: dict, base_url: str) -> str:
 # RSS feed generation
 # ---------------------------------------------------------------------------
 
-def generate_rss(episodes: list[dict], base_url: str) -> str:
-    """Generate a Podcast RSS 2.0 XML feed."""
+def generate_rss(episodes: list[dict], base_url: str,
+                  category_key: str = "", category_cfg: dict | None = None) -> str:
+    """Generate a Podcast RSS 2.0 XML feed.
+
+    When category_key+category_cfg are given, produces a filtered feed covering
+    only episodes whose theme belongs to that category. Channel title/description
+    are customized for the category so podcast apps render distinct feeds."""
     ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
     ET.register_namespace("itunes", ITUNES_NS)
@@ -272,14 +277,28 @@ def generate_rss(episodes: list[dict], base_url: str) -> str:
     rss = ET.Element("rss", version="2.0")
 
     channel = ET.SubElement(rss, "channel")
-    ET.SubElement(channel, "title").text = PODCAST_TITLE
-    ET.SubElement(channel, "description").text = PODCAST_DESC
+    if category_key and category_cfg:
+        cat_label = category_cfg.get("label", category_key)
+        ET.SubElement(channel, "title").text = f"{PODCAST_TITLE} · {cat_label}"
+        ET.SubElement(channel, "description").text = category_cfg.get("description", PODCAST_DESC)
+        link = f"{base_url.rstrip('/')}/category/{category_key}.html" if base_url else "index.html"
+    else:
+        ET.SubElement(channel, "title").text = PODCAST_TITLE
+        ET.SubElement(channel, "description").text = PODCAST_DESC
+        link = base_url or "https://example.com"
     ET.SubElement(channel, "language").text = PODCAST_LANG
-    ET.SubElement(channel, "link").text = base_url or "https://example.com"
+    ET.SubElement(channel, "link").text = link
     ET.SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}author").text = PODCAST_AUTHOR
     ET.SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}explicit").text = "no"
     cat = ET.SubElement(channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}category")
     cat.set("text", "Health & Fitness")
+
+    # Filter episodes if category_key given
+    if category_key:
+        episodes = [
+            e for e in episodes
+            if (_THEMES.get(e.get("theme")) or {}).get("category") == category_key
+        ]
 
     for ep in episodes:
         item = ET.SubElement(channel, "item")
@@ -1725,6 +1744,9 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     seo_keywords = cat_cfg.get("seo_keywords", [])
     canonical = f"{site_url}/category/{cat_key}.html" if site_url else f"category/{cat_key}.html"
     og_image = f"{site_url}/og/home.png" if site_url else "../og/home.png"
+    # Absolute URL for category RSS — needed for podcast app subscribe
+    cat_feed_abs = f"{site_url}/feed/{cat_key}.xml" if site_url else f"../feed/{cat_key}.xml"
+    cat_feed_rel = f"../feed/{cat_key}.xml"
     analytics_head = _build_analytics_head(m)
 
     cards: list[str] = []
@@ -1767,6 +1789,7 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     <meta property="og:image" content="{_esc(og_image)}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
+    <link rel="alternate" type="application/rss+xml" title="{_esc(label)} RSS" href="{_esc(cat_feed_rel)}">
     {analytics_head}
     <style>
     :root {{
@@ -1790,6 +1813,27 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }}
     .cat-desc {{ color: var(--dim); font-size: 0.95rem; }}
+    .cat-subscribe {{
+      margin-top: 14px; display: flex; flex-wrap: wrap;
+      align-items: center; gap: 10px;
+      padding: 10px 14px;
+      background: rgba(124,111,247,0.06);
+      border: 1px solid rgba(124,111,247,0.2);
+      border-radius: 10px;
+      font-size: 0.78rem;
+    }}
+    .cat-subscribe .sub-label {{ color: var(--warm); }}
+    .cat-rss-link, .cat-rss-copy {{
+      color: var(--accent); text-decoration: none;
+      background: none; border: 1px solid rgba(124,111,247,0.3);
+      padding: 3px 10px; border-radius: 12px;
+      font-family: inherit; font-size: 0.75rem;
+      cursor: pointer; transition: all 0.2s;
+    }}
+    .cat-rss-link:hover, .cat-rss-copy:hover {{
+      background: rgba(124,111,247,0.12); color: var(--text);
+    }}
+    .cat-rss-copy.copied {{ border-color: var(--warm); color: var(--warm); }}
     .ep-card {{
       display: block; padding: 18px 20px;
       background: var(--card); border: 1px solid var(--border);
@@ -1842,6 +1886,11 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
         <header>
           <h1>{_esc(label)}</h1>
           <p class="cat-desc">{_esc(desc)}</p>
+          <div class="cat-subscribe">
+            <span class="sub-label">订阅本分类 RSS ·</span>
+            <a class="cat-rss-link" href="{_esc(cat_feed_rel)}" target="_blank" rel="noopener">打开 feed.xml</a>
+            <button class="cat-rss-copy" onclick="copyCatFeed()" type="button">复制 URL</button>
+          </div>
         </header>
         <main>
           {''.join(cards)}
@@ -1849,9 +1898,22 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
         <div class="footer">
           <a href="../index.html">全部节目</a>
           <a href="../about.html">关于</a>
-          <a href="../feed.xml">RSS</a>
+          <a href="../feed.xml">全站 RSS</a>
+          <a href="../themes.html">全部主题</a>
         </div>
       </div>
+      <script>
+      function copyCatFeed() {{
+        const url = {json.dumps(cat_feed_abs, ensure_ascii=False)};
+        navigator.clipboard.writeText(url).then(() => {{
+          const btn = document.querySelector('.cat-rss-copy');
+          const old = btn.textContent;
+          btn.textContent = '已复制';
+          btn.classList.add('copied');
+          setTimeout(() => {{ btn.textContent = old; btn.classList.remove('copied'); }}, 1600);
+        }});
+      }}
+      </script>
     </body>
     </html>
     """)
@@ -2243,6 +2305,13 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     <loc>{cloc}</loc>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
+  </url>""")
+        # Category-specific RSS feed
+        floc = f"{base}/feed/{ck}.xml" if base else f"feed/{ck}.xml"
+        urls.append(f"""  <url>
+    <loc>{floc}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
   </url>""")
     # theme pages — one per configured theme with a category
     for theme_name, theme_cfg in (_THEMES or {}).items():
@@ -3080,6 +3149,21 @@ def main():
     rss_path = SITE_DIR / "feed.xml"
     rss_path.write_text(rss, encoding="utf-8")
     print(f"[OK] RSS 订阅源 → {rss_path}")
+
+    # generate per-category RSS feeds — subscribers can follow just their interest
+    if used_cats and _THEME_CATEGORIES:
+        feed_dir = SITE_DIR / "feed"
+        feed_dir.mkdir(exist_ok=True)
+        feeds_written = 0
+        for cat_key in used_cats:
+            cat_cfg = _THEME_CATEGORIES.get(cat_key)
+            if not cat_cfg:
+                continue
+            cat_rss = generate_rss(episodes, args.base_url, cat_key, cat_cfg)
+            (feed_dir / f"{cat_key}.xml").write_text(cat_rss, encoding="utf-8")
+            feeds_written += 1
+        if feeds_written:
+            print(f"[OK] 分类 RSS × {feeds_written} → {feed_dir}")
 
     print(f"\n共 {len(episodes)} 期节目已发布。")
 
