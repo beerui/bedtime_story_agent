@@ -385,6 +385,13 @@ def generate_rss(episodes: list[dict], base_url: str,
             tr.set("type", "text/plain")
             tr.set("language", PODCAST_LANG)
 
+            # Podcast 2.0: JSON chapters link (spec 1.2.0). Preferred by
+            # Podverse/Castamatic/Fountain over ID3 CHAP frames.
+            chapters_url = f"{site_url}/episodes/{ep['folder']}.chapters.json"
+            ch = ET.SubElement(item, f"{PODCAST}chapters")
+            ch.set("url", chapters_url)
+            ch.set("type", "application/json+chapters")
+
         ET.SubElement(item, "guid", isPermaLink="false").text = ep["folder"]
 
     ET.indent(rss, space="  ")
@@ -1012,6 +1019,41 @@ self.addEventListener('fetch', (event) => {
   );
 });
 """
+
+
+def generate_chapters_json(ep: dict) -> str:
+    """Generate Podcast 2.0 spec chapters.json for one episode.
+
+    Spec: https://podcastnamespace.org/namespace/1.0#chapters
+    Format:
+      {
+        "version": "1.2.0",
+        "chapters": [
+          {"startTime": 0.0, "title": "引入"},
+          {"startTime": 38.41, "title": "深入"},
+          ...
+        ]
+      }
+    Linked from RSS <podcast:chapters url="..."> so clients like Podverse,
+    Castamatic, and Fountain can render chapter-scrub UIs."""
+    chapters = extract_chapters(
+        ep.get("draft_full", ""),
+        ep.get("srt", ""),
+        title_overrides=ep.get("chapter_titles") or None,
+    )
+    if not chapters:
+        return ""
+    payload = {
+        "version": "1.2.0",
+        "chapters": [
+            {
+                "startTime": round(c["start_sec"], 2),
+                "title": c.get("title") or c.get("phase") or "",
+            }
+            for c in chapters
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def generate_episodes_manifest(episodes: list[dict], base_url: str) -> str:
@@ -4118,6 +4160,11 @@ def main():
         plain = render_script_plaintext(ep.get("draft_full", ""), ep.get("chapter_titles"))
         if plain:
             (episodes_dir / f"{_episode_slug(ep)}.txt").write_text(plain, encoding="utf-8")
+        # Write Podcast 2.0 chapters.json — consumed by Fountain/Podverse/Castamatic
+        # via <podcast:chapters> RSS link
+        ch_json = generate_chapters_json(ep)
+        if ch_json:
+            (episodes_dir / f"{_episode_slug(ep)}.chapters.json").write_text(ch_json, encoding="utf-8")
     print(f"[OK] 单期页 × {len(episodes)} → {episodes_dir}")
 
     # generate OG cover images (social share cards) — skip if Pillow unavailable

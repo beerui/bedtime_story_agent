@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-04-17] Podcast 2.0 chapters.json 导出：章节故事闭环 (publish.py + test_publish_helpers.py)
+**动因**: 章节此前在 3 个地方存在——HTML 单期页、MP3 ID3 CHAP frame、chapter_titles.json——但 Podcast 2.0 标准的 `chapters.json` 还没导出。Fountain / Podverse / Castamatic 等现代客户端优先读这个格式，不是 ID3。缺它则新客户端的章节 UI 可能不显示
+**实现**:
+1. 新增 `publish.generate_chapters_json(ep)`：
+   - 调 `extract_chapters(draft, srt, overrides=chapter_titles)` 拿到带 LLM 生成标题的章节列表
+   - 输出 Podcast 2.0 spec 1.2.0 JSON：`{version: "1.2.0", chapters: [{startTime, title}, ...]}`
+   - startTime 保留 2 位小数避免 float 噪声
+   - 无 SRT 或无章节时返回空串（调用方跳过写文件）
+2. `publish.main()` 循环里在写 HTML/TXT 之后也写 `episodes/{folder}.chapters.json`
+3. `generate_rss` item 级加 `<podcast:chapters url="..." type="application/json+chapters" />`——仅在 site_url 存在时输出
+4. 新增 2 个测试 `TestGenerateChaptersJson`：验证 1.2.0 schema + title 覆盖 + 无 SRT 时返回空
+**验证**: 
+- 19 个 chapters.json 生成（3 期老数据无 SRT 正确跳过）
+- AI焦虑夜 那期 JSON 含三条带 LLM 标题：「棉线硌着掌心 / 手机翻面光熄了 / 脚踝压着被角」timestamps 0.00/38.41/84.05
+- 22 个 RSS item 都有 `<podcast:chapters>` 链接
+- 52/52 测试全部通过
+**下一步**:
+- chapters.json 可加 `img` 字段指向 per-chapter 插图（需要画 chapter-level 生成器）
+- `<podcast:soundbite>` 标签可标记精华片段（e.g. 某期的「尾声」作为预览片）
+- 可挂 Podcast Index API 上报 GUID，让外部客户端主动发现新节目
+
 ## [2026-04-17] 每期独立方形封面：RSS per-item image (covers.py + publish.py)
 **动因**: 所有 RSS item 共享一张站点方图——Apple Podcasts / 小宇宙 / Spotify 在 now-playing 和 episode list 显示每期封面，同一张封面 22 期用，视觉懒。每期有独立视觉身份才显得用心
 **实现**:

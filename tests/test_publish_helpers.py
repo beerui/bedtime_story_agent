@@ -232,6 +232,35 @@ def _mock_episode(folder, theme, title, duration=600, tags=None):
     }
 
 
+class TestGenerateChaptersJson(unittest.TestCase):
+    def _mock_ep_with_chapters(self):
+        return {
+            "folder": "Batch_test",
+            "draft_full": SAMPLE_STORY,
+            "srt": SAMPLE_SRT,
+            "chapter_titles": {"引入": "起", "深入": "承", "尾声": "转"},
+        }
+
+    def test_returns_podcast_2_0_spec_shape(self):
+        ep = self._mock_ep_with_chapters()
+        js = publish.generate_chapters_json(ep)
+        self.assertTrue(js, "expected non-empty JSON")
+        data = json.loads(js)
+        self.assertEqual(data["version"], "1.2.0")
+        self.assertEqual(len(data["chapters"]), 3)
+        for c in data["chapters"]:
+            self.assertIn("startTime", c)
+            self.assertIn("title", c)
+        # Titles honor overrides
+        titles = [c["title"] for c in data["chapters"]]
+        self.assertEqual(titles, ["起", "承", "转"])
+
+    def test_empty_when_no_srt(self):
+        ep = self._mock_ep_with_chapters()
+        ep["srt"] = ""
+        self.assertEqual(publish.generate_chapters_json(ep), "")
+
+
 class TestGenerateSitemap(unittest.TestCase):
     def test_includes_all_expected_urls(self):
         eps = [
