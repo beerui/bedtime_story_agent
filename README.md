@@ -15,6 +15,7 @@
 ```
 outputs/Batch_20260417_xxxx_午夜慢车/
 ├── story_draft.txt      # 剧本（含韵律标记）
+├── chapter_titles.json  # LLM 生成的 3 个章节具体标题（引入/深入/尾声 → 具象画面）
 ├── final_audio.mp3      # 成品音频（配音 + BGM）
 ├── subtitles.srt        # SRT 字幕
 ├── metadata.json        # 发布元数据

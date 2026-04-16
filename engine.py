@@ -342,7 +342,72 @@ def generate_story(theme_name, output_dir, target_words, extra_prompt=""):
         console.print(f"  [green]剧本评分: {score}/100[/green]")
 
     with open(text_path, "w", encoding="utf-8") as f: f.write(final_story)
+
+    # Generate per-chapter titles (optional, best-effort) and save alongside.
+    # These replace the generic "引入/深入/尾声" labels in the HTML chapter nav
+    # and in the MP3 ID3 CHAP frames, making every episode feel unique in
+    # podcast apps (Apple Podcasts / Pocket Casts / Overcast).
+    try:
+        titles = _generate_chapter_titles(final_story, theme_name)
+        if titles:
+            import json as _json
+            titles_path = os.path.join(output_dir, "chapter_titles.json")
+            with open(titles_path, "w", encoding="utf-8") as f:
+                _json.dump(titles, f, ensure_ascii=False, indent=2)
+            console.print(f"  [dim]章节标题: {' / '.join(titles.values())}[/dim]")
+    except Exception as e:
+        console.print(f"  [yellow]章节标题生成失败（忽略）: {e}[/yellow]")
+
     return final_story
+
+
+def _generate_chapter_titles(story_text: str, theme_name: str) -> dict:
+    """Use an LLM to name each of the 引入/深入/尾声 phases concisely (≤10 chars
+    each) based on what actually happens in that phase of the script.
+
+    Returns dict like {"引入": "承认 AI 焦虑", "深入": "指尖棉线纹路", "尾声": "你在这里"}.
+    Returns empty dict on parse failure so caller can fall back."""
+    import json as _json
+    import re as _re
+
+    prompt = (
+        f"以下是助眠剧本《{theme_name}》。剧本分为 [阶段：引入]、[阶段：深入]、[阶段：尾声] 三段。"
+        "请为每段取一个 5-10 字的章节标题——要具体、抓住该段核心画面/动作/情绪。"
+        "例如：承认焦虑 / 指尖棉线纹路 / 你在这里。避免「放松 / 引导 / 冥想」这类抽象词。\n\n"
+        "严格按以下 JSON 格式输出，不要有任何前后缀或 markdown 围栏：\n"
+        '{"引入": "...", "深入": "...", "尾声": "..."}\n\n'
+        f"剧本内容：\n{story_text[:2400]}"
+    )
+    raw = text_client.chat.completions.create(
+        model=API_CONFIG["text_model"],
+        messages=[{"role": "user", "content": prompt}],
+        stream=False,
+    ).choices[0].message.content.strip()
+
+    # Strip common wrappers (markdown fences, "json" prefix, stray quotes)
+    raw = _re.sub(r"^```(?:json)?\s*|```\s*$", "", raw, flags=_re.MULTILINE).strip()
+
+    try:
+        titles = _json.loads(raw)
+    except Exception:
+        # Try extracting the first {...} block
+        m = _re.search(r"\{[^{}]*\}", raw, flags=_re.DOTALL)
+        if not m:
+            return {}
+        try:
+            titles = _json.loads(m.group(0))
+        except Exception:
+            return {}
+
+    # Validate shape: must have at least one of our three phase keys, each a short string
+    out: dict[str, str] = {}
+    for k in ("引入", "深入", "尾声"):
+        v = titles.get(k)
+        if isinstance(v, str):
+            v = v.strip().strip("「」\"'『』[]【】").strip()
+            if 0 < len(v) <= 24:
+                out[k] = v
+    return out
 
 
 def _evaluate_story(story_text, theme_name):

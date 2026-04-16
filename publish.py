@@ -152,6 +152,15 @@ def scan_episodes(outputs_dir: Path) -> list[dict]:
         if srt_path.is_file():
             srt_text = srt_path.read_text(encoding="utf-8")
 
+        # Optional LLM-generated chapter titles (replaces generic 引入/深入/尾声)
+        chapter_titles: dict = {}
+        titles_path = folder / "chapter_titles.json"
+        if titles_path.is_file():
+            try:
+                chapter_titles = json.loads(titles_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
         # extract theme from folder name: Batch_YYYYMMDD_HHMMSS_主题
         parts = folder.name.split("_", 3)
         theme = parts[3] if len(parts) >= 4 else folder.name
@@ -181,6 +190,7 @@ def scan_episodes(outputs_dir: Path) -> list[dict]:
                 "draft": draft_text[:500],
                 "draft_full": draft_text,
                 "srt": srt_text,
+                "chapter_titles": chapter_titles,
                 "timestamp": ts,
                 "pub_date": formatdate(ts.timestamp(), localtime=True),
             }
@@ -213,7 +223,11 @@ def deploy_audio(episodes: list[dict], site_dir: Path) -> None:
 
         # Embed ID3 tags + chapters once per (re)copied file
         if needs_copy and _audio_tags and _audio_tags.available():
-            chapters = extract_chapters(ep.get("draft_full", ""), ep.get("srt", ""))
+            chapters = extract_chapters(
+                ep.get("draft_full", ""),
+                ep.get("srt", ""),
+                title_overrides=ep.get("chapter_titles") or None,
+            )
             ok = _audio_tags.embed_episode_metadata(
                 str(dest),
                 title=ep.get("title") or ep.get("theme") or "助眠故事",
@@ -630,10 +644,13 @@ _SRT_BLOCK_RE = re.compile(
 )
 
 
-def extract_chapters(story_text: str, srt_text: str) -> list[dict]:
+def extract_chapters(story_text: str, srt_text: str, title_overrides: dict | None = None) -> list[dict]:
     """Build chapter list by correlating [阶段：X] markers in the story with
     SRT cue timestamps. Returns [{title, start_sec, end_sec}]. Empty list if
     either input is missing or no phases detected.
+
+    title_overrides: optional mapping {phase_name: friendly_title} to rename
+    generic "引入/深入/尾声" to LLM-generated specific titles.
 
     Strategy:
       - Parse SRT into ordered cues (start_sec, end_sec)
@@ -693,7 +710,9 @@ def extract_chapters(story_text: str, srt_text: str) -> list[dict]:
             end = cues[next_idx][0] if next_idx < len(cues) else last_end
         else:
             end = last_end
-        chapters.append({"title": name, "start_sec": start, "end_sec": end})
+        # Prefer LLM-generated specific title, fall back to phase name
+        display_title = (title_overrides or {}).get(name) or name
+        chapters.append({"title": display_title, "phase": name, "start_sec": start, "end_sec": end})
     return chapters
 
 
@@ -824,7 +843,11 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
     # Chapters — one per [阶段：X] marker. Renders as clickable navigation below
     # the player so returning listeners can jump to e.g. the body-scan section.
-    chapters = extract_chapters(ep.get("draft_full", ""), ep.get("srt", ""))
+    chapters = extract_chapters(
+        ep.get("draft_full", ""),
+        ep.get("srt", ""),
+        title_overrides=ep.get("chapter_titles") or None,
+    )
     chapters_html = ""
     if chapters:
         chapter_items = []

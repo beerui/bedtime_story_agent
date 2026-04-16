@@ -4,6 +4,24 @@
 
 ---
 
+## [2026-04-17] 章节标题从「引入/深入/尾声」升级为具象画面 (engine.py + publish.py + backfill_chapter_titles.py)
+**动因**: Apple Podcasts 里每期章节都是一模一样的「引入/深入/尾声」，三个通用标签不区分任何期内容。用户滑过 chapter list 看不到差别——等于没有章节。专业播客（NPR / The Daily / 小宇宙 top 榜）每个章节名都是具体的，这是内容差异化的核心视觉
+**实现**:
+1. `engine.py _generate_chapter_titles(story_text, theme_name)`：第 4 个 LLM call（紧随质量评估后），基于 final_story 生成严格 JSON `{"引入": "...", "深入": "...", "尾声": "..."}`，每标题 5-10 字；鲁棒解析（去 markdown 围栏、提取首个 `{}` 块、去引号等装饰）
+2. `generate_story` 结束时追加调用，失败记录黄色 warning 但不阻塞；成功保存到 `chapter_titles.json`
+3. `publish.py scan_episodes` 读 `chapter_titles.json` 到 `ep["chapter_titles"]`；`extract_chapters` 新增 `title_overrides` 参数，按 phase_name 查表替换 title；调用方同时传 SRT 和 overrides
+4. 结构化返回：chapter dict 新增 `phase` 字段（原始 phase 名），`title` 是显示用（override 或 phase 兜底）——同时支持 HTML 展示（.chapter-name）和 ID3 CHAP TIT2
+5. `backfill_chapter_titles.py` 一次性脚本：遍历 outputs/，为 23 个历史文件夹调 LLM 生成 chapter_titles.json；支持 `--dry-run` / `--force`；从 folder 名解析 theme（含 `_EP\d+` suffix 剥除）
+6. 实跑 23 期全部成功，示例：
+   - AI焦虑夜：「棉线硌着掌心 / 手机翻面光熄了 / 脚踝压着被角」
+   - 父母渐老：「咖啡渍卷起的报告单 / 砂锅盖子轻轻颤 / 指尖暖起来」
+   - 失业缓冲期：「椅面余温凹痕 / 简历推入抽屉 / 雨声里你在」
+**验证**: HTML 单期页 `.chapter-name` 正确展示具象标题；MP3 `CHAP:ch000/001/002` 的 TIT2 子帧也写入同样标题；向后兼容——缺 chapter_titles.json 的期 fallback 到 phase 名（引入/深入/尾声）
+**下一步**:
+- 把 chapter_titles 也融入 OG 封面（每章节变体图）——目前封面是整期一张
+- engine.py 里 chapter title 生成可以做 retry（如果 JSON 解析失败，重试一次带更严格 prompt）
+- 把 chapter_titles 作为 description 前缀加到 episode page，首屏就展示章节内容
+
 ## [2026-04-17] 分享菜单 + FAQ 页（含 FAQPage schema） (publish.py)
 **动因**: 增长复利的核心是「让满意听众主动帮你分享」。单期页原来的「📤 分享」用的是 navigator.share 兜底 copyLink——在没装对应 app 的浏览器里只是复制链接，文案要听众自己写。同样 AI 内容的信任问题没专属落地页，陌生访客的常见疑虑没地方一次性打消
 **实现**:
