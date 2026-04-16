@@ -951,6 +951,44 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       border-radius: 16px; padding: 18px; margin-bottom: 32px;
     }}
     .player audio {{ width: 100%; }}
+    .player-controls {{
+      display: flex; gap: 8px; margin-bottom: 10px;
+      justify-content: flex-end;
+    }}
+    .speed-wrap, .timer-wrap {{ position: relative; }}
+    .pc-btn {{
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 12px; border-radius: 18px;
+      cursor: pointer; font-size: 0.78rem; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: all 0.2s ease;
+    }}
+    .pc-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+    .pc-btn.active {{
+      border-color: var(--warm); color: var(--warm);
+      background: rgba(240,194,127,0.08);
+    }}
+    .pc-label {{ font-variant-numeric: tabular-nums; }}
+    .pc-timer-menu {{
+      position: absolute; top: 100%; right: 0; margin-top: 6px;
+      background: rgba(20,20,50,0.97); border: 1px solid var(--border);
+      border-radius: 10px; padding: 6px 0; min-width: 120px;
+      display: none; z-index: 5;
+    }}
+    .pc-timer-menu.show {{ display: block; }}
+    .pc-timer-menu button {{
+      display: block; width: 100%; text-align: left;
+      padding: 7px 14px; background: none; border: none;
+      color: var(--text); font-size: 0.78rem; cursor: pointer;
+      font-family: inherit;
+    }}
+    .pc-timer-menu button:hover {{ background: rgba(255,255,255,0.05); }}
+    .pc-timer-badge {{
+      font-size: 0.64rem; color: var(--warm);
+      background: rgba(240,194,127,0.15);
+      padding: 1px 6px; border-radius: 8px;
+    }}
+    body.pc-dimmed {{ opacity: 0.3; transition: opacity 1.5s ease; }}
     .share {{ display: flex; gap: 10px; margin-top: 12px; }}
     .share button {{
       background: none; border: 1px solid var(--border);
@@ -1103,6 +1141,29 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         <div class="tags">{tags_html}</div>
 
         <div class="player">
+          <div class="player-controls">
+            <div class="speed-wrap">
+              <button class="pc-btn" onclick="cycleSpeed(this)" title="播放速度" data-speed="1">
+                <span class="pc-label" id="speedLabel">1.0×</span>
+              </button>
+            </div>
+            <div class="timer-wrap" id="timerWrap">
+              <button class="pc-btn" onclick="togglePcTimerMenu()" title="睡眠定时器">
+                <svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:-3px">
+                  <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
+                  <polyline points="12,7 12,12 16,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span id="pcTimerBadge" class="pc-timer-badge" style="display:none"></span>
+              </button>
+              <div class="pc-timer-menu" id="pcTimerMenu">
+                <button onclick="setPcSleepTimer(0)">关闭</button>
+                <button onclick="setPcSleepTimer(15)">15 分钟</button>
+                <button onclick="setPcSleepTimer(30)">30 分钟</button>
+                <button onclick="setPcSleepTimer(45)">45 分钟</button>
+                <button onclick="setPcSleepTimer(60)">60 分钟</button>
+              </div>
+            </div>
+          </div>
           <audio controls preload="metadata" src="{_esc(audio_src)}"></audio>
           <div class="share">
             <button onclick="shareEp()">📤 分享</button>
@@ -1175,6 +1236,69 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           chapters.forEach((c, i) => c.classList.toggle('active', i === activeIdx));
         }});
       }})();
+
+      // --- Playback speed cycle ---
+      const _SPEEDS = [1, 1.25, 1.5, 0.75];
+      let _speedIdx = 0;
+      function cycleSpeed(btn) {{
+        const audioEl = document.querySelector('.player audio');
+        if (!audioEl) return;
+        _speedIdx = (_speedIdx + 1) % _SPEEDS.length;
+        const s = _SPEEDS[_speedIdx];
+        audioEl.playbackRate = s;
+        btn.querySelector('.pc-label').textContent = s.toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0') + '×';
+        btn.classList.toggle('active', s !== 1);
+        if (window.trackEvent) window.trackEvent('Speed Change', {{ speed: s }});
+      }}
+
+      // --- Sleep timer (single-episode page) ---
+      let _pcTimerId = null;
+      let _pcTimerRemain = 0;
+      function togglePcTimerMenu() {{
+        document.getElementById('pcTimerMenu').classList.toggle('show');
+      }}
+      document.addEventListener('click', (e) => {{
+        if (!e.target.closest('#timerWrap')) {{
+          document.getElementById('pcTimerMenu')?.classList.remove('show');
+        }}
+      }});
+      function setPcSleepTimer(minutes) {{
+        const menu = document.getElementById('pcTimerMenu');
+        const badge = document.getElementById('pcTimerBadge');
+        const audioEl = document.querySelector('.player audio');
+        menu?.classList.remove('show');
+        if (_pcTimerId) {{ clearInterval(_pcTimerId); _pcTimerId = null; }}
+        if (minutes === 0) {{
+          badge.style.display = 'none';
+          document.body.classList.remove('pc-dimmed');
+          return;
+        }}
+        _pcTimerRemain = minutes * 60;
+        badge.style.display = 'inline';
+        badge.textContent = minutes + 'm';
+        if (window.trackEvent) window.trackEvent('Sleep Timer Set', {{ minutes }});
+        _pcTimerId = setInterval(() => {{
+          _pcTimerRemain--;
+          badge.textContent = Math.ceil(_pcTimerRemain / 60) + 'm';
+          if (_pcTimerRemain < minutes * 60 * 0.2) document.body.classList.add('pc-dimmed');
+          if (_pcTimerRemain <= 0) {{
+            clearInterval(_pcTimerId); _pcTimerId = null;
+            audioEl?.pause();
+            badge.style.display = 'none';
+          }}
+        }}, 1000);
+      }}
+
+      // Tiny trackEvent shim if analytics block didn't inject one
+      if (!window.trackEvent) {{
+        window.trackEvent = function(n, p) {{
+          try {{
+            if (window.plausible) window.plausible(n, p ? {{ props: p }} : undefined);
+            else if (window.umami) window.umami.track(n, p || {{}});
+            else if (window.gtag) window.gtag('event', n, p || {{}});
+          }} catch (e) {{}}
+        }};
+      }}
       </script>
     </body>
     </html>

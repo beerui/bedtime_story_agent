@@ -4,6 +4,21 @@
 
 ---
 
+## [2026-04-17] 单期页播放器增强：倍速 + 睡眠定时器 (publish.py)
+**动因**: 单期页用的是浏览器原生 `<audio controls>`，只能播/停/拖——缺倍速（让人能边扫文稿边听）、缺睡眠定时器（助眠内容核心场景：听着听着睡着，不想醒来发现还在播）。首页浮动播放器有这俩，单期页没有是明显的体验洼地
+**实现**:
+1. 音频元素上方新增 `.player-controls` 横排：倍速 pill + 睡眠定时器 pill（下拉菜单）
+2. 倍速 `cycleSpeed`：循环 1.0× → 1.25× → 1.5× → 0.75× → 1.0×；!= 1 时 pill 变暖金高亮；触发 `Speed Change` 埋点
+3. 睡眠定时器 `setPcSleepTimer(m)`：0/15/30/45/60 分钟选项，倒计时 badge 显示剩余分钟，到 20% 剩余时 `body.pc-dimmed` 渐暗，归零自动暂停音频；触发 `Sleep Timer Set` 埋点
+4. 菜单外点击自动关闭（closest('#timerWrap') 判断）
+5. `trackEvent` 函数做了兜底：analytics 块没注入时也不会 ReferenceError
+6. 不替换浏览器原生播放器——只在上方增加工具条，保留了播放/拖动等默认行为（实现简单，兼容各平台）
+**验证**: 每页 14 处 speed-wrap/pc-btn/cycleSpeed/setPcSleepTimer 渲染点；Apple 设备 audio element 仍有播放控件；`.pc-dimmed` 动画随定时器靠近终点触发
+**下一步**:
+- 定时器状态可持久化到 localStorage，同一设备重访保留
+- 快进/快退 ±15s 按钮（助眠内容其实倒退用得少，优先级低）
+- 章节 + 定时器组合：定时器剩余时间精确到「下一章节结束后自动停」（更贴合助眠使用）
+
 ## [2026-04-17] ID3 章节嵌入：章节跨端（Apple Podcasts / Pocket Casts）可见 (audio_tags.py + publish.py + requirements)
 **动因**: 上轮加的 HTML 章节只在网页上能用。但真正听众在 Apple Podcasts / Spotify / Pocket Casts / Overcast 上听——这些才是高转化渠道（一键订阅）。没有跨端章节 = 专业度不到位，订阅了也不会买会员
 **实现**:

@@ -25,7 +25,7 @@ site/                    # 可直接部署到 GitHub Pages / Vercel / Netlify
 ├── index.html           # 首页（订阅按钮 + 分类筛选 + 节目列表 + 支持板块）
 ├── about.html           # 关于页（4 分类/生成流程/变现披露，信任建设）
 ├── category/*.html      # 4 个分类着陆页（按 SEO 意图独立打关键词）
-├── episodes/*.html      # 每期独立长文页（SEO 长尾 + 心理技术徽章 + 章节导航）
+├── episodes/*.html      # 每期独立长文页（SEO 长尾 + 心理技术徽章 + 章节导航 + 倍速+睡眠定时器）
 ├── audio/*.mp3          # 扁平化音频
 ├── og/*.png             # 1200x630 社交分享封面
 ├── feed.xml             # Podcast RSS 2.0
