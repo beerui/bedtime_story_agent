@@ -4,6 +4,23 @@
 
 ---
 
+## [2026-04-17] doctor.py 全站静态健康诊断 (doctor.py + ci.yml)
+**动因**: 31 轮功能推下来累积了大量模板/资源/结构化数据，从未系统验证整体健康度——可能有未被替换的 f-string 占位符、断的相对链接、JSON-LD 语法错、RSS/manifest 解析失败等。tests/ 单测覆盖 helper 函数层，但整站产出是否 coherent 是另一个层次
+**实现**:
+1. 新增 `doctor.py`，4 类检查：
+   - **未替换的 f-string 占位符**：正则匹配 `{identifier}` 形式（避开 CSS `{{ }}`），只在 HTML 可见区扫（剥 `<style>`/`<script>`）
+   - **断的本地引用**：解析 `href/src/action` 属性，跳过外链/锚点/非 http 协议（podcasts/mailto/javascript/data），相对路径按 `page_dir` 解析，目标不在 site/ 下 → warning，目标不存在 → error
+   - **HTML 基础 meta**：`<title>` / `meta description` / JSON-LD payload 可解析
+   - **JSON/XML 文件**：manifest.webmanifest、episodes.json、sitemap.xml、feed.xml、\*.chapters.json 全部 parse 验证
+2. `--page xxx` 聚焦、`--json` CI 消费、`--summary` 只总结
+3. 自证能力：注入假 broken ref → 精准报告；注入假 JSON-LD → 精准报告
+4. CI workflow `Smoke-check site output` 步骤末尾加 `python3 doctor.py --summary`——outputs/ 有内容时才跑
+**验证**: 当前 site/ 179 项资源，0 error、0 warning——31 轮功能开发无任何静默回归
+**下一步**:
+- 可加外链可达性检查（`requests.head` 对 RSS enclosure URL 等），但会显著慢 CI；默认关闭
+- 可集成到 `deploy.sh` 里，部署前兜底最后一道
+- doctor.py --json 输出可被 GitHub Actions 上传成 artifact 供 PR 对比
+
 ## [2026-04-17] Podcast 2.0 chapters.json 导出：章节故事闭环 (publish.py + test_publish_helpers.py)
 **动因**: 章节此前在 3 个地方存在——HTML 单期页、MP3 ID3 CHAP frame、chapter_titles.json——但 Podcast 2.0 标准的 `chapters.json` 还没导出。Fountain / Podverse / Castamatic 等现代客户端优先读这个格式，不是 ID3。缺它则新客户端的章节 UI 可能不显示
 **实现**:

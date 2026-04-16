@@ -95,6 +95,8 @@ jobs:
             test -d site/episodes || (echo "::error::site/episodes/ missing"; exit 1)
             test -d site/category || (echo "::error::site/category/ missing"; exit 1)
             test -d site/theme || (echo "::error::site/theme/ missing"; exit 1)
+            # Deep diagnostic: broken refs, bad JSON-LD, unreplaced placeholders
+            python3 doctor.py --summary
             echo "All expected artifacts present."
           fi
           echo "Site tree:"
