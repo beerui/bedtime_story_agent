@@ -598,6 +598,78 @@ def _episode_slug(ep: dict) -> str:
     return ep["folder"]
 
 
+_SRT_BLOCK_RE = re.compile(
+    r"(\d+):(\d+):(\d+)[,\.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,\.](\d+)"
+)
+
+
+def extract_chapters(story_text: str, srt_text: str) -> list[dict]:
+    """Build chapter list by correlating [阶段：X] markers in the story with
+    SRT cue timestamps. Returns [{title, start_sec, end_sec}]. Empty list if
+    either input is missing or no phases detected.
+
+    Strategy:
+      - Parse SRT into ordered cues (start_sec, end_sec)
+      - Walk story lines; narrative lines correspond 1:1 with cues in order
+      - When a [阶段：X] marker precedes the next narrative line, that line's
+        cue start_sec becomes the chapter start."""
+    if not story_text or not srt_text:
+        return []
+
+    cues: list[tuple[float, float]] = []
+    for block in re.split(r"\n\n+", srt_text.strip()):
+        lines = block.strip().split("\n")
+        if len(lines) < 2:
+            continue
+        m = _SRT_BLOCK_RE.search(lines[1]) if len(lines) >= 2 else None
+        if not m:
+            continue
+        start = int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + int(m[4]) / 1000
+        end = int(m[5]) * 3600 + int(m[6]) * 60 + int(m[7]) + int(m[8]) / 1000
+        cues.append((start, end))
+
+    if not cues:
+        return []
+
+    # Walk story lines; track which cue index each phase starts at
+    phase_starts: list[tuple[str, int]] = []
+    pending_phase: str | None = None
+    cue_idx = 0
+    for raw in story_text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        phase_m = _PHASE_RE.match(line)
+        if phase_m:
+            pending_phase = phase_m.group(1).strip()
+            continue
+        # Strip all bracket tags — if the line becomes empty it had no narrative
+        narrative = _STRIP_RE.sub("", line).strip()
+        if not narrative:
+            continue
+        if cue_idx >= len(cues):
+            break
+        if pending_phase is not None:
+            phase_starts.append((pending_phase, cue_idx))
+            pending_phase = None
+        cue_idx += 1
+
+    if not phase_starts:
+        return []
+
+    chapters: list[dict] = []
+    last_end = cues[-1][1]
+    for i, (name, idx) in enumerate(phase_starts):
+        start = cues[idx][0]
+        if i + 1 < len(phase_starts):
+            next_idx = phase_starts[i + 1][1]
+            end = cues[next_idx][0] if next_idx < len(cues) else last_end
+        else:
+            end = last_end
+        chapters.append({"title": name, "start_sec": start, "end_sec": end})
+    return chapters
+
+
 def _episode_href(ep: dict) -> str:
     """Link path from site/index.html to the episode page."""
     return f"episodes/{_episode_slug(ep)}.html"
@@ -704,6 +776,29 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
     analytics_head = _build_analytics_head(m)
+
+    # Chapters — one per [阶段：X] marker. Renders as clickable navigation below
+    # the player so returning listeners can jump to e.g. the body-scan section.
+    chapters = extract_chapters(ep.get("draft_full", ""), ep.get("srt", ""))
+    chapters_html = ""
+    if chapters:
+        chapter_items = []
+        for i, ch in enumerate(chapters):
+            dur = int(ch["end_sec"] - ch["start_sec"])
+            start_str = _fmt_duration(int(ch["start_sec"]))
+            chapter_items.append(
+                f'<button class="chapter" data-start="{ch["start_sec"]:.2f}" data-idx="{i}" '
+                f'data-track="Jump Chapter" data-prop-name="{_esc(ch["title"])}">'
+                f'<span class="chapter-time">{start_str}</span>'
+                f'<span class="chapter-name">{_esc(ch["title"])}</span>'
+                f'<span class="chapter-dur">{dur // 60}:{dur % 60:02d}</span>'
+                f'</button>'
+            )
+        chapters_html = (
+            '<nav class="chapters" aria-label="章节导航">'
+            + "".join(chapter_items)
+            + "</nav>"
+        )
 
     # Clinical technique badge — surfaces pain_point / technique for trust-building.
     # Skipped silently when theme has no metadata (custom themes or legacy config).
@@ -854,6 +949,39 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       min-width: 70px; flex-shrink: 0;
     }}
     .tech-val {{ color: var(--text); flex: 1; }}
+
+    /* --- chapters (per-phase nav below player) --- */
+    .chapters {{
+      display: grid; gap: 6px;
+      margin-bottom: 20px;
+      grid-template-columns: 1fr;
+    }}
+    .chapter {{
+      display: grid;
+      grid-template-columns: 58px 1fr auto;
+      gap: 14px; align-items: center;
+      padding: 10px 14px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; cursor: pointer;
+      color: var(--text); font-family: inherit; font-size: 0.86rem;
+      text-align: left; transition: all 0.2s ease;
+    }}
+    .chapter:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.28);
+      transform: translateX(2px);
+    }}
+    .chapter.active {{
+      background: rgba(124,111,247,0.1);
+      border-color: var(--accent);
+      color: var(--text);
+    }}
+    .chapter-time {{
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      color: var(--warm); font-size: 0.78rem;
+    }}
+    .chapter-name {{ font-weight: 500; }}
+    .chapter-dur {{ color: var(--dim); font-size: 0.72rem; }}
     article.transcript {{ font-size: 0.95rem; }}
     article.transcript h2.phase {{
       font-size: 0.78rem; font-weight: 500; letter-spacing: 0.2em;
@@ -955,6 +1083,8 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           </div>
         </div>
 
+        {chapters_html}
+
         {tech_badge_html}
 
         {'<div class="summary">' + _esc(desc_plain) + '</div>' if desc_plain else ''}
@@ -992,6 +1122,32 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           setTimeout(() => t.classList.remove('show'), 1400);
         }});
       }}
+
+      // --- Chapter navigation ---
+      (function() {{
+        const audioEl = document.querySelector('.player audio');
+        const chapters = document.querySelectorAll('.chapter');
+        if (!audioEl || !chapters.length) return;
+        chapters.forEach(btn => {{
+          btn.addEventListener('click', () => {{
+            const t = parseFloat(btn.dataset.start);
+            if (!isNaN(t)) {{
+              audioEl.currentTime = t;
+              audioEl.play().catch(() => {{}});
+            }}
+          }});
+        }});
+        // Highlight the current chapter as playback progresses
+        const starts = Array.from(chapters).map(c => parseFloat(c.dataset.start));
+        audioEl.addEventListener('timeupdate', () => {{
+          const t = audioEl.currentTime;
+          let activeIdx = -1;
+          for (let i = 0; i < starts.length; i++) {{
+            if (t >= starts[i]) activeIdx = i;
+          }}
+          chapters.forEach((c, i) => c.classList.toggle('active', i === activeIdx));
+        }});
+      }})();
       </script>
     </body>
     </html>

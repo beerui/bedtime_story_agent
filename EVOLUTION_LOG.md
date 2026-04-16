@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-04-17] 章节导航：把 [阶段：X] 标记变可点击时间戳 (publish.py)
+**动因**: 每期脚本有 [阶段：引入/深入/尾声] 三段，韵律引擎按此切换速度/音量/停顿——但听众没有任何入口跳到自己想重听的那一段。复听用户是转化打赏/订阅的主力，没有章节导航等于让他们每次都从头开始
+**实现**:
+1. `extract_chapters(story, srt)` 在 publish.py 里新增：解析 SRT 成 cues 列表，walk story 行追踪 `[阶段：X]` 标记，每当阶段前面是待匹配状态、下一条叙述行出现时把 cue 的 start_sec 记为章节起点。返回 `[{title, start_sec, end_sec}]`
+2. 防御：narrative line 识别用 _STRIP_RE 剥离所有 `[xx]` 标记后判断是否有文字；没 SRT 或没 phase marker 都返回 `[]`，episode 页章节 UI 自然不渲染
+3. 单期页播放器下方新增 `<nav class="chapters">`：三列网格（时间/名字/时长），点击调用 `audio.currentTime = data-start` 并 play；分析埋点 `Jump Chapter` 带 name 属性
+4. CSS：默认暗色 card，hover 时位移 2px 右移，active 状态用 accent 色边框（时间随播放进度自动高亮当前段）
+5. `timeupdate` handler 找最近 start 时间的 chapter，toggle `.active` class——老期没 SRT 文件时章节数组为空，handler 不注册
+**验证**: 22 期中 19 期新期全部识别 3 章节（引入/深入/尾声），每期 3 个 data-start 时间戳；老期 3 期缺 SRT 所以章节为空（预期行为）；AI焦虑 示例章节：引入 0:00 / 深入 0:38 / 尾声 1:24
+**下一步**:
+- MP3 里可以 embed ID3 CHAP frames（podcast 客户端会显示章节）——这一步能让 Apple Podcasts / Pocket Casts 等也呈现章节，提升跨渠道体验
+- 章节名可从「引入/深入/尾声」升级为更具体的（例：AI 焦虑的「承认焦虑 → 具身锚定 → 消融」），需要让 engine.py 在生成阶段标记时同时记录段落主题
+- 章节可加播放次数 heatmap（需分析埋点跑一段时间后聚合）
+
 ## [2026-04-17] 分类着陆页 + 首页筛选 chips (publish.py + README)
 **动因**: 22 期内容就位后暴露两个问题：（a）首页一屏 22 张卡片堆在一起，用户来时带着具体意图（"我要的是裁员焦虑"），滚动找很烦；（b）搜索引擎只有 index+episodes+about 几类页，category.seo_keywords（裁员焦虑/ACT/职场共鸣/自然解压）定义了但无落地页承载，SEO 资产浪费
 **实现**:
