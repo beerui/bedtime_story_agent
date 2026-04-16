@@ -705,6 +705,26 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
     analytics_head = _build_analytics_head(m)
 
+    # Clinical technique badge — surfaces pain_point / technique for trust-building.
+    # Skipped silently when theme has no metadata (custom themes or legacy config).
+    tech_badge_html = ""
+    pp = theme_cfg.get("pain_point", "").strip()
+    tech = theme_cfg.get("technique", "").strip()
+    target = theme_cfg.get("emotional_target", "").strip()
+    if pp or tech:
+        rows = []
+        if pp:
+            rows.append(f'<div class="tech-row"><span class="tech-label">此刻的感受</span><span class="tech-val">{_esc(pp)}</span></div>')
+        if tech:
+            rows.append(f'<div class="tech-row"><span class="tech-label">使用的技术</span><span class="tech-val">{_esc(tech)}</span></div>')
+        if target:
+            rows.append(f'<div class="tech-row"><span class="tech-label">听完的状态</span><span class="tech-val">{_esc(target)}</span></div>')
+        tech_badge_html = (
+            '<aside class="tech-badge" aria-label="本期心理锚点">'
+            + "".join(rows) +
+            '</aside>'
+        )
+
     # prev/next episode navigation (keeps listeners bingeing)
     nav_parts: list[str] = []
     if prev_ep:
@@ -821,6 +841,19 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       border-radius: 12px; padding: 14px 18px; margin-bottom: 32px;
       color: var(--dim); font-size: 0.88rem; line-height: 1.7;
     }}
+    .tech-badge {{
+      background: linear-gradient(135deg, rgba(124,111,247,0.06), rgba(240,194,127,0.03));
+      border: 1px solid rgba(124,111,247,0.18);
+      border-radius: 12px; padding: 14px 18px;
+      margin-bottom: 20px;
+      display: grid; gap: 8px;
+    }}
+    .tech-row {{ display: flex; gap: 12px; font-size: 0.82rem; line-height: 1.6; }}
+    .tech-label {{
+      color: var(--warm); font-weight: 500;
+      min-width: 70px; flex-shrink: 0;
+    }}
+    .tech-val {{ color: var(--text); flex: 1; }}
     article.transcript {{ font-size: 0.95rem; }}
     article.transcript h2.phase {{
       font-size: 0.78rem; font-weight: 500; letter-spacing: 0.2em;
@@ -922,6 +955,8 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           </div>
         </div>
 
+        {tech_badge_html}
+
         {'<div class="summary">' + _esc(desc_plain) + '</div>' if desc_plain else ''}
 
         <article class="transcript">
@@ -934,6 +969,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
         <div class="footer-nav">
           <a href="../index.html">← 所有 {total_eps} 期</a>
+          <a href="../about.html">关于</a>
           <a href="../feed.xml">RSS 订阅 →</a>
         </div>
       </div>
@@ -962,6 +998,198 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     """)
 
 
+def generate_about_page(monetization: dict, base_url: str) -> str:
+    """Generate site/about.html — trust-building page explaining what the site is,
+    the 4 theme categories, how episodes are produced, and transparent monetization.
+
+    Critical for an AI-generated content site: skeptical visitors need to see the
+    process before they subscribe / donate / click affiliate links."""
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    canonical = f"{site_url}/about.html" if site_url else "about.html"
+    og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
+    analytics_head = _build_analytics_head(m)
+
+    # Category sections: pull from THEME_CATEGORIES + count themes per category
+    cat_sections: list[str] = []
+    by_cat: dict[str, list[str]] = {}
+    for name, cfg in (_THEMES or {}).items():
+        by_cat.setdefault(cfg.get("category", "其他"), []).append(name)
+    for cat_key, cat_cfg in (_THEME_CATEGORIES or {}).items():
+        names = by_cat.get(cat_key, [])
+        if not names:
+            continue
+        label = cat_cfg.get("label", cat_key)
+        desc = cat_cfg.get("description", "")
+        theme_list = "、".join(names)
+        cat_sections.append(f"""
+        <section class="cat">
+          <h3>{_esc(label)} · {len(names)} 期</h3>
+          <p class="cat-desc">{_esc(desc)}</p>
+          <p class="cat-themes">{_esc(theme_list)}</p>
+        </section>""")
+
+    # Monetization transparency block
+    reveal_parts = []
+    don = m.get("donation") or {}
+    if don.get("enabled"):
+        reveal_parts.append(f"<li>打赏（{_esc(don.get('label', '自愿'))}）— 一次性小额资助电台运营</li>")
+    spon = m.get("sponsor_slot") or {}
+    if spon.get("enabled"):
+        reveal_parts.append("<li>品牌赞助 — 每期开头/结尾可能出现的品牌提及，会明确标注「赞助」字样</li>")
+    aff = m.get("affiliates") or {}
+    if aff.get("enabled"):
+        reveal_parts.append("<li>联盟推荐 — 助眠相关商品（眼罩/白噪音机/耳塞等），通过链接购买你不会多花钱但电台会拿到一点分成</li>")
+    prem = m.get("premium") or {}
+    if prem.get("enabled"):
+        reveal_parts.append("<li>会员内容 — 部分长版/无 BGM 纯人声版将对付费会员开放</li>")
+    reveal_html = ""
+    if reveal_parts:
+        reveal_html = f"""
+        <section class="trust">
+          <h2>透明变现披露</h2>
+          <p>我们相信助眠内容的本质是信任——所以你有权知道我们怎么挣钱：</p>
+          <ul>{''.join(reveal_parts)}</ul>
+          <p class="trust-note">所有变现位都不会影响内容本身的心理学质量。联盟商品是我们自己也会用的。</p>
+        </section>"""
+
+    contact_email = ((m.get("social") or {}).get("contact_email") or "").strip()
+    contact_html = ""
+    if contact_email:
+        contact_html = f'<p class="contact">有建议或合作意向？<a href="mailto:{_esc(contact_email)}">{_esc(contact_email)}</a></p>'
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关于 · {PODCAST_TITLE}</title>
+    <meta name="description" content="助眠电台的设计理念、18 个主题 4 大分类的心理学基础、AI 生成流程透明披露、变现模式披露。">
+    <meta name="keywords" content="助眠电台,关于,心理学,ACT,安全岛,韵律弧线,AI生成,催眠,冥想">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="关于 · {_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="4 大分类 18 个主题的心理学基础 + 生产流程透明披露">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{_esc(og_image)}">
+    {analytics_head}
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.85;
+    }}
+    .wrap {{ max-width: 720px; margin: 0 auto; padding: 60px 20px 100px; }}
+    .back {{ color: var(--dim); text-decoration: none; font-size: 0.85rem; }}
+    .back:hover {{ color: var(--accent); }}
+    h1 {{
+      font-size: 2rem; margin: 16px 0 10px;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .lede {{ color: var(--dim); font-size: 1.02rem; margin-bottom: 40px; }}
+    h2 {{
+      font-size: 1.15rem; font-weight: 600;
+      margin: 40px 0 14px; color: var(--text);
+      border-left: 3px solid var(--accent); padding-left: 12px;
+    }}
+    h3 {{ font-size: 1rem; font-weight: 600; margin: 20px 0 8px; color: var(--warm); }}
+    p {{ color: var(--text); margin-bottom: 14px; font-size: 0.95rem; }}
+    ul {{ padding-left: 20px; margin-bottom: 16px; }}
+    li {{ color: var(--text); margin-bottom: 8px; font-size: 0.92rem; }}
+    .cat {{
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 20px; margin-bottom: 14px;
+    }}
+    .cat-desc {{ font-size: 0.88rem; color: var(--dim); margin-bottom: 8px; }}
+    .cat-themes {{ font-size: 0.82rem; color: var(--warm); margin: 0; }}
+    .process {{
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-top: 10px;
+    }}
+    .process ol {{ counter-reset: step; padding-left: 0; list-style: none; }}
+    .process li {{
+      position: relative; padding-left: 36px; counter-increment: step;
+    }}
+    .process li::before {{
+      content: counter(step);
+      position: absolute; left: 0; top: 0;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(124,111,247,0.18); color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 600;
+    }}
+    .trust {{
+      background: linear-gradient(135deg, rgba(240,194,127,0.06), rgba(124,111,247,0.04));
+      border: 1px solid rgba(240,194,127,0.2);
+      border-radius: 12px; padding: 20px 24px;
+    }}
+    .trust-note {{ color: var(--dim); font-size: 0.85rem; margin-top: 10px; }}
+    .contact {{
+      margin-top: 40px; padding-top: 20px;
+      border-top: 1px solid var(--border); color: var(--dim);
+    }}
+    .contact a {{ color: var(--accent); }}
+    code {{
+      background: rgba(255,255,255,0.06); padding: 1px 7px;
+      border-radius: 5px; font-family: ui-monospace, Menlo, monospace;
+      color: var(--warm); font-size: 0.88em;
+    }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="index.html">← 回到首页</a>
+        <h1>关于助眠电台</h1>
+        <p class="lede">用 AI 写稿、真人级韵律合成、心理学技术引导——每晚 10 分钟，把脑子里的白天声音关小。</p>
+
+        <h2>这是什么</h2>
+        <p>一个按主题批量生产的助眠音频电台。每一期由三轮 LLM 写稿（大纲 → 扩写 → 润色）+ 质量评分 + 低分自动重写组成；语音用韵律弧线引擎控制语速、音量、停顿从正常逐渐降到接近呢喃的状态；再叠上匹配的 BGM 和可选的双耳节拍。</p>
+
+        <h2>4 大主题分类</h2>
+        <p>18 个主题按「这对谁有用」分 4 类。每个主题都有明确的<strong>痛点 / 心理或感官技术 / 目标状态</strong>三要素——不是随便想一个场景。</p>
+        {''.join(cat_sections)}
+
+        <h2>韵律弧线引擎</h2>
+        <p>普通 TTS 全篇匀速。我们用 Prosody Curve 分三段控制节奏：</p>
+        <ul>
+          <li><strong>引入段（前 30%）</strong>：<code>speed=1.0, vol=1.0, pause=0.3s</code> — 自然语速承认感受</li>
+          <li><strong>深入段（30-70%）</strong>：<code>speed=0.82, vol=0.85, pause=0.6s</code> — 引导放松</li>
+          <li><strong>尾声段（后 30%）</strong>：<code>speed=0.55, vol=0.3, pause=2.0s</code> — 接近呢喃、带入睡眠</li>
+        </ul>
+        <p>内联标记 <code>[慢速]</code>/<code>[轻声]</code>/<code>[极弱]</code> 是乘法叠加在曲线上——同一个标记越靠近尾声效果越强。</p>
+
+        <h2>AI 生成流程透明披露</h2>
+        <p>每期剧本的质量闭环：</p>
+        <div class="process">
+          <ol>
+            <li><strong>大纲生成</strong>：把主题的 pain_point / technique / emotional_target 注入 prompt，LLM 输出三段式心理暗示大纲</li>
+            <li><strong>扩写成稿</strong>：按目标字数扩写，必须具体承认痛点画面（禁止笼统「今天辛苦了」）</li>
+            <li><strong>主编润色</strong>：去 AI 腔、禁用排比/反问/说教/集体措辞，保留所有韵律标记</li>
+            <li><strong>质量评估</strong>：5 维各 20 分（催眠感 / 感官描写 / 节奏标记 / 去 AI 腔 / 痛点对齐）</li>
+            <li><strong>低分重写</strong>：评分 &lt;70 自动按评审反馈重写一次，再次评分</li>
+          </ol>
+        </div>
+        {reveal_html}
+
+        <h2>技术栈</h2>
+        <p>开源自治——<a href="https://github.com/beerui/bedtime_story_agent" target="_blank" rel="noopener" style="color:var(--accent)">GitHub 源码</a>。文本用 Qwen（通义千问），语音用 CosyVoice（配额耗尽自动降级 edge-tts），封面用 Pillow 生成，站点是纯 HTML/CSS/JS 无任何框架。</p>
+
+        {contact_html}
+      </div>
+    </body>
+    </html>
+    """)
+
+
 def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     """XML sitemap listing all pages — helps Google/Bing index the long-tail."""
     base = (base_url or "").rstrip("/")
@@ -980,6 +1208,12 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     <lastmod>{lastmod}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+  </url>""")
+    about_loc = f"{base}/about.html" if base else "about.html"
+    urls.append(f"""  <url>
+    <loc>{about_loc}</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>""")
     body = "\n".join(urls)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -1093,8 +1327,11 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     .stats {{
       display: flex; justify-content: center; gap: 24px; margin-top: 16px;
       font-size: 0.8rem; color: var(--text-dim);
+      flex-wrap: wrap;
     }}
     .stats b {{ color: var(--warm); font-weight: 600; }}
+    .stats-link {{ color: var(--text-dim); text-decoration: none; transition: color 0.2s; }}
+    .stats-link:hover {{ color: var(--accent); }}
 
     /* --- episode card --- */
     .episode {{
@@ -1310,6 +1547,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         <div class="stats">
           <span><b>{total_eps}</b> 期节目</span>
           <span><b>{_fmt_duration(total_dur)}</b> 总时长</span>
+          <a class="stats-link" href="about.html">关于 →</a>
         </div>
       </header>
 
@@ -1648,6 +1886,12 @@ def main():
     (SITE_DIR / "sitemap.xml").write_text(generate_sitemap(episodes, args.base_url), encoding="utf-8")
     (SITE_DIR / "robots.txt").write_text(generate_robots(args.base_url), encoding="utf-8")
     print(f"[OK] sitemap.xml + robots.txt → {SITE_DIR}")
+
+    # generate About page (trust + transparency + theme taxonomy)
+    (SITE_DIR / "about.html").write_text(
+        generate_about_page(monetization, args.base_url), encoding="utf-8"
+    )
+    print(f"[OK] 关于页 → {SITE_DIR / 'about.html'}")
 
     # generate RSS feed
     rss = generate_rss(episodes, args.base_url)

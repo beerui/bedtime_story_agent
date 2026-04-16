@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-04-17] 信任建设：About 页 + 单期页临床技术徽章 (publish.py + README)
+**动因**: 用户截图显示站点成功部署但停在占位页（batch 没产出），也暴露出更大问题——即使有内容，AI 生成类站点缺「凭什么信任」的落地页。陌生访客看到 3 秒内不知道：是谁做的？怎么做的？是瞎编还是有心理学基础？不解决信任，订阅/打赏/联盟都转化不动
+**实现**:
+1. 单期页标题下方加「临床技术徽章」：渲染 pain_point + technique + emotional_target 三行 label-value，紫金微渐变边框，不抢戏但让来访者一眼看到「这不是随便生成的，有心理锚点」；custom theme 无元数据时徽章整体隐藏
+2. `publish.py generate_about_page()` 生成完整的 `site/about.html` ≈8.7KB：
+   - 引子 lede
+   - 4 大主题分类（从 THEME_CATEGORIES 拉 label/description + 每类当前主题数+名字）
+   - 韵律弧线引擎解释（引入/深入/尾声三段参数）
+   - **AI 生成流程透明披露**（步骤化：大纲→扩写→润色→5维评分→低分重写），counter 编号的 .process ol 样式
+   - **变现透明披露**（条件性渲染，从 monetization 读打赏/赞助/联盟/会员实际启用的块，不 enable 就不显示）
+   - 技术栈 credit + GitHub 源码链接
+   - 联系邮箱（从 monetization.social.contact_email）
+3. 站点导航打通：
+   - 首页 header stats 行新增「关于 →」链接
+   - 单期页 footer-nav 在「所有 N 期」和「RSS 订阅」中间加「关于」
+   - sitemap.xml 增加 about.html 条目（priority 0.6，changefreq monthly）
+4. README 站点结构部分补 about.html 说明
+**验证**: 4 个 category section 按 THEME_CATEGORIES 顺序渲染（5+4+4+5=18 主题），每期页 3 处 tech-badge 渲染点（1 aside + 2 CSS 规则），sitemap 含 about 条目
+**下一步**:
+- About 页里 4 分类目前只列主题名，可以给每个主题加超链接到其最新一期
+- 变现披露块如果没 enable 任何一个会整段隐藏——看起来像没披露，其实是真的没变现。可考虑即使没开也显示「暂未启用」一行增加透明度
+- FAQ 页可以补上（"为什么每期长度不同" / "AI 写稿靠谱吗" / "订阅了会推送什么"）
+
 ## [2026-04-17] 心理元数据打通到 LLM Prompt + 按主题自动字数 (engine.py + batch.py + README)
 **动因**: 上轮给主题加了 pain_point/technique/emotional_target，但这些只是"配置里的文档"——engine.py 生成剧本时只读 `story_prompt`，元数据没实际影响写稿。等于有了瞄准镜没校准枪。另：batch.py 所有主题用同一个 `--words=600`，15 分钟主题（深海独潜 Body Scan）和 10 分钟主题（深夜咖啡馆）产出同样长度，内容匹配不上主题节奏
 **实现**:

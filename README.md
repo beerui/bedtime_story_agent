@@ -23,7 +23,8 @@ outputs/Batch_20260417_xxxx_午夜慢车/
 
 site/                    # 可直接部署到 GitHub Pages / Vercel / Netlify
 ├── index.html           # 首页（订阅按钮 + 节目列表 + 支持板块）
-├── episodes/*.html      # 每期独立长文页（SEO 长尾）
+├── about.html           # 关于页（4 分类/生成流程/变现披露，信任建设）
+├── episodes/*.html      # 每期独立长文页（SEO 长尾 + 心理技术徽章）
 ├── audio/*.mp3          # 扁平化音频
 ├── og/*.png             # 1200x630 社交分享封面
 ├── feed.xml             # Podcast RSS 2.0
