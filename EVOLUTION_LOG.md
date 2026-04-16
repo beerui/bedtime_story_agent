@@ -4,6 +4,28 @@
 
 ---
 
+## [2026-04-17] CI workflow：push/PR 自动跑测试+校验 (.github/workflows/ci.yml)
+**动因**: 上轮加了 22 个单测但只能本地手跑。这些测试只有在提交前被记得跑才有价值——人会忘记。CI 在 push/PR 时自动跑，让 failing tests 像编译错误一样立即可见，是"锁定成果"的最后一公里
+**实现**:
+1. 新增 `.github/workflows/ci.yml`，`on: push/pull_request branches: [main]`
+2. 流程：
+   - Checkout 代码 + 尝试 checkout `content` 分支（`continue-on-error: true`，首次没 content 分支不崩）
+   - 把 content 分支的 outputs/ copy 回来——有真实内容时跑全量校验，没有时跑 placeholder 路径
+   - 安装 Python 3.11 + fonts-wqy + ffmpeg
+   - 跑全部 50 个 mock 单测（publish helpers 22 + cosyvoice 14 + prosody 14）
+   - 跑 `validate.py`（error 阻断，warning/info 不阻断）
+   - 跑 `validate.py --json > validate-report.json` 作为 artifact 上传（7 天保留）
+   - 跑 `publish.py --base-url https://example.test`（无 --copy-audio，纯模板）
+   - Smoke check：若 outputs/ 非空则校验 index/feed/sitemap/manifest/sw/about/faq/themes/stats/episodes.json/subdirs 全部存在；否则只校验 placeholder
+3. 不依赖 DASHSCOPE_API_KEY——纯代码层校验，零 API 配额消耗
+4. 与 `daily.yml` 分离：daily 是 schedule 生产+部署，ci 是 push/pr 反馈
+5. README 加 CI badge，`docs/GITHUB_ACTIONS_SETUP.md` 新增 CI 章节
+**验证**: 本地模拟 CI：`python3 -m unittest` 50 pass / `validate.py` exit 0 / `publish.py` 在空 outputs/ 时正确 emit placeholder index.html + robots.txt
+**下一步**:
+- CI 可加 lint step（flake8 / ruff）进一步规范代码
+- PR 时把 validate-report.json 作为 PR comment 贴出来（需要 actions/github-script）
+- 可加 coverage report，看哪些 publish helpers 还没被测到
+
 ## [2026-04-17] publish.py 核心 helpers 回归测试 (tests/test_publish_helpers.py)
 **动因**: publish.py 累计到 4000+ 行、零测试覆盖。过去 22 轮每次 edit 都在赌"没改坏别的地方"——换章节标题格式、改 SRT 时间戳解析、调 breadcrumb JSON、改 form HTML 等等，任何一处静默退化都会让几十个页面跟着坏。应该停下来加一层保护网
 **实现**: 

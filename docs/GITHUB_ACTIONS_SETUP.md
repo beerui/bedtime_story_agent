@@ -1,6 +1,9 @@
 # GitHub Actions 自动化部署配置
 
-这个项目的 `.github/workflows/daily.yml` 可以每天自动生产一期新节目并部署到 GitHub Pages——你不需要本机开机。
+这个项目的 `.github/workflows/` 下有两个 workflow：
+
+- **`ci.yml`** — 每次 push/PR 自动跑单测 + 管线校验 + publish dry-run，快速反馈代码改动是否破坏了东西；不依赖 API key，不部署
+- **`daily.yml`** — 每天自动生产一期新节目并部署到 GitHub Pages——你不需要本机开机
 
 ## 一次性配置
 
@@ -89,6 +92,21 @@ A: 改 `cron: '5 23 * * *'` 里的数字。`23 5` 是 UTC 时间——北京 = U
    - `DASHSCOPE_API_KEY` 未配或值错：第 `Produce new episode` step 报 401
    - 没装字体：`covers.py` 报 `Image.FreeTypeFont` 找不到——workflow 已 `apt-get install fonts-wqy-microhei` 兜底
    - content 分支推不上：看 Workflow permissions 设置
+
+## CI（`ci.yml`）
+
+运行时机：push 到 main、PR 到 main。
+
+做什么：
+1. Checkout 代码 + 尝试拉 content 分支（若存在，用真实 outputs/ 测全量；不存在用空 outputs 测 placeholder 路径）
+2. 安装 Python + 系统依赖（中文字体、ffmpeg）
+3. 跑 50 个 mock 单测（`tests.test_publish_helpers / test_cosyvoice_synthesize / test_prosody`）
+4. 跑 `validate.py`——error 阻断；warning/info 只记录不阻断
+5. 跑 `publish.py --base-url https://example.test`（不 --copy-audio，纯模板渲染）
+6. Smoke check 关键产物（index.html / feed.xml / sitemap.xml / manifest.webmanifest / sw.js 等）
+7. 上传 `validate-report.json` 作为 artifact（7 天保留期）
+
+**不依赖 DASHSCOPE_API_KEY**——纯代码层校验，不消耗配额。
 
 ## 关闭自动化回到手动部署
 

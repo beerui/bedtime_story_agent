@@ -1,5 +1,7 @@
 # Bedtime Story Agent
 
+[![CI](https://github.com/beerui/bedtime_story_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/beerui/bedtime_story_agent/actions/workflows/ci.yml)
+
 全自动助眠音频内容生产管线 + 可部署站点 —— 从文字到上线，一个命令搞定。
 
 ## 它能做什么

@@ -1,0 +1,109 @@
+name: CI
+
+# Fast feedback on every push/PR: unit tests + pipeline validator + publish
+# smoke-test. Runs without DASHSCOPE_API_KEY — uses existing content branch
+# outputs if present, otherwise publish.py's placeholder path.
+#
+# Separate from daily.yml (which produces + deploys content). This workflow
+# only validates code changes without touching content or deploying.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # Try to restore content-branch outputs for full validation. If content
+      # branch doesn't exist yet (first ever run), continue with empty outputs/
+      # and publish.py will emit the placeholder path.
+      - name: Checkout content branch (if any)
+        uses: actions/checkout@v4
+        with:
+          ref: content
+          path: content-branch
+        continue-on-error: true
+
+      - name: Restore outputs/ from content branch
+        run: |
+          if [ -d content-branch/outputs ]; then
+            cp -r content-branch/outputs ./outputs
+            echo "Restored $(ls outputs 2>/dev/null | wc -l) episode folders"
+          else
+            echo "No content branch yet — running on empty outputs/"
+            mkdir -p outputs
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system deps (fonts + ffmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-wqy-microhei fonts-wqy-zenhei \
+            ffmpeg
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest \
+            tests.test_publish_helpers \
+            tests.test_cosyvoice_synthesize \
+            tests.test_prosody \
+            -v
+
+      - name: Run pipeline validator
+        run: |
+          python3 validate.py
+          # Also emit JSON summary to artifact
+          python3 validate.py --json > validate-report.json
+
+      - name: Generate site (smoke test)
+        run: |
+          # No --copy-audio: skip actual file copy to keep CI fast. publish.py
+          # still generates all HTML/XML/JSON. With outputs/ empty, the
+          # placeholder path is exercised instead.
+          python3 publish.py \
+            --base-url "https://example.test"
+
+      - name: Smoke-check site output
+        run: |
+          set -e
+          # Placeholder check first — works with empty outputs/
+          test -f site/index.html || (echo "::error::site/index.html missing"; exit 1)
+          # If we restored content, we should also have the richer artifacts
+          if [ -d outputs ] && [ -n "$(ls -A outputs 2>/dev/null | grep -v '^\\.')" ]; then
+            test -f site/feed.xml || (echo "::error::site/feed.xml missing"; exit 1)
+            test -f site/sitemap.xml || (echo "::error::site/sitemap.xml missing"; exit 1)
+            test -f site/about.html || (echo "::error::site/about.html missing"; exit 1)
+            test -f site/faq.html || (echo "::error::site/faq.html missing"; exit 1)
+            test -f site/themes.html || (echo "::error::site/themes.html missing"; exit 1)
+            test -f site/stats.html || (echo "::error::site/stats.html missing"; exit 1)
+            test -f site/episodes.json || (echo "::error::site/episodes.json missing"; exit 1)
+            test -f site/manifest.webmanifest || (echo "::error::PWA manifest missing"; exit 1)
+            test -f site/sw.js || (echo "::error::service worker missing"; exit 1)
+            test -d site/episodes || (echo "::error::site/episodes/ missing"; exit 1)
+            test -d site/category || (echo "::error::site/category/ missing"; exit 1)
+            test -d site/theme || (echo "::error::site/theme/ missing"; exit 1)
+            echo "All expected artifacts present."
+          fi
+          echo "Site tree:"
+          find site -maxdepth 2 -type f | sort | head -30
+
+      - name: Upload validate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validate-report
+          path: validate-report.json
+          retention-days: 7
