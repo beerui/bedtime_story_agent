@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-04-16] SEO 长尾流量：单期页 + sitemap (publish.py)
+**动因**: 上一轮把站点做可上线了，但 Google/Bing 只能索引一篇 index.html——音频本身是不可索引的，长尾搜索关键词（"午夜慢车 助眠"、"雨夜山中小屋 冥想"）全部落空。没有自然流量就没有听众，就没有收入
+**实现**:
+1. `publish.py` 新增 `render_script_html()`：把 `[阶段：X]` → `<h2>`、`[环境音：X]` → `<em class="cue">（X）</em>`、`[停顿]`/`[慢速]`/`[轻声]` 等韵律标记全部剥离，得到适合阅读的纯净 HTML
+2. `generate_episode_page()` 为每期产出 `site/episodes/{folder}.html`——包含完整文稿（800+ 字可索引中文内容）、内嵌播放器、分享按钮（Web Share API + 复制链接）、PodcastEpisode JSON-LD schema、canonical URL、OG/Twitter card
+3. `generate_sitemap()` 产出 `site/sitemap.xml` 列出首页 + 所有单期页，`generate_robots()` 产出 `site/robots.txt` 指向 sitemap
+4. 首页卡片加「阅读全文 →」链接，播放按钮保持原样
+**验证**: `python3 publish.py --copy-audio --base-url https://beerui.github.io/bedtime_story_agent` 成功产出 3 个单期页（~9.3KB 各）；PodcastEpisode / canonical / og:type 每页 10+ 个结构化标签；sitemap 列出全 4 个 URL 且使用绝对路径；韵律标记按预期剥离（`[停顿]` 0 处残留，`[环境音：...]` 转为 cue 斜体）
+**下一步**:
+- 单期页缺少「下一集 / 上一集」导航，算法推荐连播会更长 dwell time
+- 没有图片 OG card——目前社交分享缩略图是空的；可用场景图或生成专属封面
+- 可以加 Google Analytics / Umami 事件埋点，看哪期留存最长，据此决定后续选题
+- 每期文稿底部可再插一个相关推荐区（相似标签的其他期）增加站内链接深度
+
 ## [2026-04-16] 变现基础设施 (publish.py + monetization + deploy.sh)
 **动因**: 项目有内容但**不能上线**——site/ 里 HTML 用 `../outputs/...` 相对路径，GitHub Pages/Vercel 无法解析；即使能上线，也没有变现接口（打赏/联盟/赞助位），流量无法转化为收入
 **实现**:

@@ -163,6 +163,7 @@ def scan_episodes(outputs_dir: Path) -> list[dict]:
                 "duration": duration,
                 "word_count": word_count,
                 "draft": draft_text[:500],
+                "draft_full": draft_text,
                 "srt": srt_text,
                 "timestamp": ts,
                 "pub_date": formatdate(ts.timestamp(), localtime=True),
@@ -380,6 +381,318 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
     <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>""")
 
 
+import re
+
+
+_PHASE_RE = re.compile(r"\[阶段[:：]\s*([^\]]+)\]")
+_PAUSE_RE = re.compile(r"\[停顿[^\]]*\]")
+_CUE_RE = re.compile(r"\[环境音[:：]\s*([^\]]+)\]")
+_STRIP_RE = re.compile(r"\[[^\]]+\]")
+
+
+def render_script_html(text: str) -> str:
+    """Turn a story draft (with prosody/phase/cue markup) into readable HTML.
+
+    Phase markers become section headings, pauses become paragraph breaks,
+    ambient cues become inline parentheticals, all other bracket tags are stripped."""
+    if not text:
+        return ""
+
+    sections: list[tuple[str, list[str]]] = []  # (phase_name, paragraphs)
+    current_phase = ""
+    current_paragraphs: list[str] = []
+    current_buf: list[str] = []
+
+    def flush_paragraph():
+        line = "".join(current_buf).strip()
+        current_buf.clear()
+        if line:
+            current_paragraphs.append(line)
+
+    def flush_section():
+        flush_paragraph()
+        if current_paragraphs:
+            sections.append((current_phase, list(current_paragraphs)))
+            current_paragraphs.clear()
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_paragraph()
+            continue
+
+        phase_m = _PHASE_RE.match(line)
+        if phase_m:
+            flush_section()
+            current_phase = phase_m.group(1).strip()
+            continue
+
+        # replace cues inline with italic parenthetical
+        line = _CUE_RE.sub(lambda m: f"__CUE__{m.group(1).strip()}__ECUE__", line)
+        # strip pauses (they force paragraph breaks)
+        parts = _PAUSE_RE.split(line)
+        for idx, seg in enumerate(parts):
+            clean = _STRIP_RE.sub("", seg).strip()
+            if clean:
+                current_buf.append(clean)
+            if idx < len(parts) - 1:
+                flush_paragraph()
+
+    flush_section()
+
+    # render to HTML
+    html_parts: list[str] = []
+    for phase, paras in sections:
+        if phase:
+            html_parts.append(f'<h2 class="phase">{_esc(phase)}</h2>')
+        for p in paras:
+            safe = _esc(p)
+            safe = safe.replace("__CUE__", '<em class="cue">（').replace("__ECUE__", "）</em>")
+            html_parts.append(f"<p>{safe}</p>")
+    return "\n".join(html_parts)
+
+
+def _episode_slug(ep: dict) -> str:
+    return ep["folder"]
+
+
+def _episode_href(ep: dict) -> str:
+    """Link path from site/index.html to the episode page."""
+    return f"episodes/{_episode_slug(ep)}.html"
+
+
+def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps: int) -> str:
+    """Standalone long-form page for one episode — optimized for SEO long-tail traffic.
+
+    Contains full readable transcript, embedded audio, share buttons, and
+    episode-specific OG/JSON-LD metadata so social shares and search engines
+    get proper previews."""
+    m = monetization or {}
+    site_url = (m.get("site_url") or base_url or "").rstrip("/")
+    page_path = f"episodes/{_episode_slug(ep)}.html"
+    canonical = f"{site_url}/{page_path}" if site_url else page_path
+    # audio path: episode pages live in site/episodes/, audio in site/audio/ → ../audio/
+    audio_src = f"../audio/{ep['folder']}.mp3" if ep.get("site_audio") else f"../../{ep['audio_path']}"
+    audio_abs = f"{site_url}/audio/{ep['folder']}.mp3" if site_url and ep.get("site_audio") else ""
+
+    desc_plain = ep["description"] or (ep["draft_full"][:140] + "…" if len(ep["draft_full"]) > 140 else ep["draft_full"])
+    desc_plain = _STRIP_RE.sub("", desc_plain).strip()
+
+    jsonld_ep = {
+        "@context": "https://schema.org",
+        "@type": "PodcastEpisode",
+        "name": ep["title"],
+        "description": desc_plain[:500],
+        "datePublished": ep["timestamp"].strftime("%Y-%m-%d"),
+        "inLanguage": PODCAST_LANG,
+        "duration": f"PT{ep['duration'] // 60}M{ep['duration'] % 60}S",
+        "partOfSeries": {"@type": "PodcastSeries", "name": PODCAST_TITLE},
+    }
+    if audio_abs:
+        jsonld_ep["associatedMedia"] = {
+            "@type": "MediaObject",
+            "contentUrl": audio_abs,
+            "encodingFormat": "audio/mpeg",
+        }
+
+    transcript_html = render_script_html(ep["draft_full"])
+    tags_html = "".join(f'<span class="tag">{_esc(t)}</span>' for t in ep["tags"][:6])
+
+    share_text = f"{ep['title']} | {PODCAST_TITLE}"
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{_esc(ep['title'])} | {_esc(PODCAST_TITLE)}</title>
+    <meta name="description" content="{_esc(desc_plain[:160])}">
+    <meta name="keywords" content="{_esc('助眠,睡眠,冥想,' + ','.join(ep['tags'][:5]))}">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="{_esc(ep['title'])}">
+    <meta property="og:description" content="{_esc(desc_plain[:160])}">
+    <meta property="og:locale" content="zh_CN">
+    {'<meta property="og:url" content="' + _esc(canonical) + '">' if site_url else ''}
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{_esc(ep['title'])}">
+    <meta name="twitter:description" content="{_esc(desc_plain[:160])}">
+    <script type="application/ld+json">{json.dumps(jsonld_ep, ensure_ascii=False)}</script>
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.8;
+    }}
+    .wrap {{ max-width: 680px; margin: 0 auto; padding: 40px 20px 120px; }}
+    .back {{
+      display: inline-block; color: var(--dim); text-decoration: none;
+      font-size: 0.85rem; margin-bottom: 20px; transition: color 0.2s;
+    }}
+    .back:hover {{ color: var(--accent); }}
+    .theme-badge {{
+      display: inline-block; font-size: 0.72rem; color: var(--accent);
+      background: rgba(124,111,247,0.12); padding: 3px 12px; border-radius: 20px;
+      margin-bottom: 12px;
+    }}
+    h1 {{
+      font-size: 1.6rem; font-weight: 700; line-height: 1.4;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 8px;
+    }}
+    .meta {{ font-size: 0.8rem; color: var(--dim); margin-bottom: 20px; }}
+    .tags {{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px; }}
+    .tag {{
+      font-size: 0.7rem; color: var(--dim);
+      background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 10px;
+    }}
+    .player {{
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 18px; margin-bottom: 32px;
+    }}
+    .player audio {{ width: 100%; }}
+    .share {{ display: flex; gap: 10px; margin-top: 12px; }}
+    .share button {{
+      background: none; border: 1px solid var(--border);
+      color: var(--text); padding: 6px 14px; border-radius: 18px;
+      cursor: pointer; font-size: 0.78rem; transition: all 0.2s;
+    }}
+    .share button:hover {{ border-color: var(--accent); color: var(--accent); }}
+    .summary {{
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 18px; margin-bottom: 32px;
+      color: var(--dim); font-size: 0.88rem; line-height: 1.7;
+    }}
+    article.transcript {{ font-size: 0.95rem; }}
+    article.transcript h2.phase {{
+      font-size: 0.78rem; font-weight: 500; letter-spacing: 0.2em;
+      color: var(--warm); margin: 40px 0 16px; text-transform: uppercase;
+      border-left: 2px solid var(--warm); padding-left: 10px;
+    }}
+    article.transcript p {{
+      margin-bottom: 16px; color: var(--text);
+    }}
+    article.transcript .cue {{
+      color: var(--dim); font-style: italic; font-size: 0.88em;
+    }}
+    .footer-nav {{
+      margin-top: 60px; padding-top: 24px;
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      font-size: 0.8rem;
+    }}
+    .footer-nav a {{ color: var(--dim); text-decoration: none; }}
+    .footer-nav a:hover {{ color: var(--accent); }}
+    .toast {{
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      background: rgba(124,111,247,0.95); color: #fff;
+      padding: 10px 20px; border-radius: 24px; font-size: 0.8rem;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }}
+    .toast.show {{ opacity: 1; }}
+    @media (max-width: 600px) {{
+      .wrap {{ padding: 24px 16px 80px; }}
+      h1 {{ font-size: 1.3rem; }}
+    }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="../index.html">← 回到所有节目</a>
+        <span class="theme-badge">{_esc(ep['theme'])}</span>
+        <h1>{_esc(ep['title'])}</h1>
+        <div class="meta">{ep['timestamp'].strftime('%Y-%m-%d')} · {ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</div>
+        <div class="tags">{tags_html}</div>
+
+        <div class="player">
+          <audio controls preload="metadata" src="{_esc(audio_src)}"></audio>
+          <div class="share">
+            <button onclick="shareEp()">📤 分享</button>
+            <button onclick="copyLink()">🔗 复制链接</button>
+          </div>
+        </div>
+
+        {'<div class="summary">' + _esc(desc_plain) + '</div>' if desc_plain else ''}
+
+        <article class="transcript">
+          {transcript_html}
+        </article>
+
+        <div class="footer-nav">
+          <a href="../index.html">← 所有 {total_eps} 期</a>
+          <a href="../feed.xml">RSS 订阅 →</a>
+        </div>
+      </div>
+
+      <div class="toast" id="toast">已复制</div>
+      <script>
+      function shareEp() {{
+        const url = location.href;
+        const title = {json.dumps(share_text, ensure_ascii=False)};
+        if (navigator.share) {{
+          navigator.share({{ title, url }}).catch(() => {{}});
+        }} else {{
+          copyLink();
+        }}
+      }}
+      function copyLink() {{
+        navigator.clipboard.writeText(location.href).then(() => {{
+          const t = document.getElementById('toast');
+          t.classList.add('show');
+          setTimeout(() => t.classList.remove('show'), 1400);
+        }});
+      }}
+      </script>
+    </body>
+    </html>
+    """)
+
+
+def generate_sitemap(episodes: list[dict], base_url: str) -> str:
+    """XML sitemap listing all pages — helps Google/Bing index the long-tail."""
+    base = (base_url or "").rstrip("/")
+    urls: list[str] = []
+    homepage = f"{base}/" if base else "./"
+    urls.append(f"""  <url>
+    <loc>{homepage}</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>""")
+    for ep in episodes:
+        loc = f"{base}/episodes/{_episode_slug(ep)}.html" if base else f"episodes/{_episode_slug(ep)}.html"
+        lastmod = ep["timestamp"].strftime("%Y-%m-%d")
+        urls.append(f"""  <url>
+    <loc>{loc}</loc>
+    <lastmod>{lastmod}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>""")
+    body = "\n".join(urls)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{body}
+</urlset>
+"""
+
+
+def generate_robots(base_url: str) -> str:
+    base = (base_url or "").rstrip("/")
+    sitemap_url = f"{base}/sitemap.xml" if base else "sitemap.xml"
+    return f"""User-agent: *
+Allow: /
+
+Sitemap: {sitemap_url}
+"""
+
+
 def generate_html(episodes: list[dict], monetization: dict | None = None, base_url: str = "") -> str:
     """Generate a self-contained dark-themed HTML player page."""
     monetization = monetization or {}
@@ -390,6 +703,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         desc_short = ep["description"][:120] + "…" if len(ep["description"]) > 120 else ep["description"]
         srt_attr = f' data-srt="{ep["srt"][:3000]}"' if ep["srt"] else ""
         audio_src = resolve_html_audio(ep)
+        ep_href = _episode_href(ep)
 
         episode_cards.append(f"""
       <article class="episode" data-audio="{audio_src}"{srt_attr}>
@@ -400,6 +714,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         <h3 class="ep-title">{ep['title']}</h3>
         <p class="ep-desc">{desc_short}</p>
         <div class="ep-tags">{tags_html}</div>
+        <a class="ep-read" href="{ep_href}">阅读全文 →</a>
         <button class="play-btn" onclick="togglePlay(this, {i})">
           <svg class="icon-play" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
           <svg class="icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
@@ -495,6 +810,12 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
       font-size: 0.7rem; color: var(--text-dim); background: rgba(255,255,255,0.05);
       padding: 2px 8px; border-radius: 10px;
     }}
+    .ep-read {{
+      display: inline-block; font-size: 0.72rem; color: var(--accent);
+      text-decoration: none; margin-top: 10px; opacity: 0.75;
+      transition: opacity 0.2s;
+    }}
+    .ep-read:hover {{ opacity: 1; }}
     .play-btn {{
       position: absolute; right: 24px; top: 50%; transform: translateY(-50%);
       width: 48px; height: 48px; border-radius: 50%;
@@ -871,6 +1192,19 @@ def main():
     html_path = SITE_DIR / "index.html"
     html_path.write_text(html, encoding="utf-8")
     print(f"[OK] 播放器 → {html_path}")
+
+    # generate per-episode pages (for SEO long-tail traffic)
+    episodes_dir = SITE_DIR / "episodes"
+    episodes_dir.mkdir(exist_ok=True)
+    for ep in episodes:
+        page = generate_episode_page(ep, monetization, args.base_url, len(episodes))
+        (episodes_dir / f"{_episode_slug(ep)}.html").write_text(page, encoding="utf-8")
+    print(f"[OK] 单期页 × {len(episodes)} → {episodes_dir}")
+
+    # generate sitemap.xml + robots.txt so search engines can crawl everything
+    (SITE_DIR / "sitemap.xml").write_text(generate_sitemap(episodes, args.base_url), encoding="utf-8")
+    (SITE_DIR / "robots.txt").write_text(generate_robots(args.base_url), encoding="utf-8")
+    print(f"[OK] sitemap.xml + robots.txt → {SITE_DIR}")
 
     # generate RSS feed
     rss = generate_rss(episodes, args.base_url)
