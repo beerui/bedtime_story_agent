@@ -4,6 +4,32 @@
 
 ---
 
+## [2026-04-17] 邮件订阅 form：播客客户端之外的留存通道 (publish.py + monetization.example.json)
+**动因**: 订阅按钮覆盖 Apple Podcasts / Spotify / 小宇宙 / RSS，但中国大量用户不用播客客户端——他们可能看了文稿、收藏了链接然后就再也不来。邮件是最普适的「一键加入 + 定期推送」留存通道，尤其对 AI 内容，每周一封编辑过的精选能主动把用户拉回来
+**实现**:
+1. `_build_newsletter_form(m, context="page")`：输出标准 HTML form POST 到 `monetization.newsletter.endpoint_url`——兼容任意服务商：
+   - FormSubmit.co（免注册，POST 到邮箱地址即转发）
+   - FormSubmit alias（`/el/alias` 隐藏真实邮箱）
+   - Buttondown / Formspark / Formspree（常见订阅服务）
+2. FormSubmit 特殊处理：自动注入 `_subject` / `_template` / `_captcha` 三个隐藏字段，让通知邮件漂亮
+3. 反爬：`_honey` 蜜罐字段（bot 自动填，人类留空），`autocomplete="email"` 走浏览器密码管理
+4. 零配置安全：`enabled=false` 或 `endpoint_url=""` 时 form 整体不渲染，只剩 CSS/JS（未激活状态下完全隐形）
+5. `_NEWSLETTER_JS` / `_NEWSLETTER_CSS` 作为模块级常量被 3 个页面模板共享注入——避免重复定义
+6. 挂到 3 个关键位置：
+   - 首页订阅按钮区下方（最高流量点）
+   - 单期页上下集导航下方（听完一期后的情感峰值）
+   - 关于页底部（信任建立后的自然 CTA）
+7. `onNewsletterSubmit` 触发 `Subscribe Email` 埋点（跨 Plausible / Umami / GA4），让用户能看到哪个位置转化最高
+8. monetization.example.json 新增 newsletter 块，注释列出 5 种常见服务的 endpoint 格式
+**验证**: 
+- enabled=false：3 页面各 0 个 form 渲染，零 UI 痕迹 ✓
+- 测试 monetization.json（endpoint=https://formsubmit.co/el/test-alias）：3 页面各 1 个 form，action URL 正确指向 endpoint ✓
+- CSS 暖金渐变边框 + 圆角输入框 + 紫到紫粉渐变按钮（与站点主色一致）
+**下一步**:
+- 可以加「最近订阅了 N 人」伪 live counter（取 localStorage 里的 sign-up 次数作为社交证明）
+- 成功回调现在默认让浏览器跳到 provider 的 success 页；如果要无缝体验可打开 `_NEWSLETTER_JS` 里注释掉的 fetch 分支
+- 目前 3 个位置都一样的 form 文案；可以按 context（home/episode/about）微调 title/description
+
 ## [2026-04-17] 分类 RSS：按兴趣分组订阅 (publish.py)
 **动因**: 22 期混在主 feed.xml 里，订阅用户被迫接收全部主题——想要纯心理学技术的和想要时代痛点的是不同人群。播客应用（Apple Podcasts / Pocket Casts / 小宇宙）都支持多 feed 并列，按兴趣分组订阅是标配体验
 **实现**:

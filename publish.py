@@ -539,6 +539,106 @@ def _build_placeholder_html(base_url: str) -> str:
     """)
 
 
+def _build_newsletter_form(m: dict, context: str = "page") -> str:
+    """Render an email newsletter subscription form. Returns empty string when
+    monetization.newsletter is absent / disabled / missing endpoint — zero-leak
+    when user hasn't configured a provider.
+
+    Compatible with any HTML-form-accepting backend:
+    - FormSubmit.co         → https://formsubmit.co/your@email.com
+    - FormSubmit alias     → https://formsubmit.co/el/alias-id
+    - Buttondown (form)    → https://buttondown.email/api/emails/embed-subscribe/your-username
+    - Formspark            → https://submit-form.com/YOUR_FORM_ID
+    - Formspree            → https://formspree.io/f/YOUR_FORM_ID
+
+    context is appended to form id/name to avoid collisions when multiple forms
+    land on the same page (e.g. homepage hero + about footer)."""
+    n = ((m or {}).get("newsletter") or {})
+    if not n.get("enabled") or not n.get("endpoint_url"):
+        return ""
+
+    title = n.get("title") or "每周收到一封"
+    desc = n.get("description") or "每周一封精选助眠内容 + 新期提醒，任何时候可取消。"
+    button_label = n.get("button_label") or "订阅"
+    success_msg = n.get("success_message") or "订阅成功 · 请查收邮件确认"
+    endpoint = n.get("endpoint_url")
+    hidden_provider_fields = ""
+    # FormSubmit.co benefits from a few standard hidden fields
+    if "formsubmit.co" in endpoint:
+        hidden_provider_fields = (
+            '<input type="hidden" name="_subject" value="助眠电台 · 新订阅请求">'
+            '<input type="hidden" name="_template" value="table">'
+            '<input type="hidden" name="_captcha" value="false">'
+        )
+    form_id = f"newsletter-{context}"
+    return textwrap.dedent(f"""
+    <section class="newsletter" aria-labelledby="{form_id}-title">
+      <div class="nl-body">
+        <h3 id="{form_id}-title" class="nl-title">{_esc(title)}</h3>
+        <p class="nl-desc">{_esc(desc)}</p>
+      </div>
+      <form class="nl-form" method="POST" action="{_esc(endpoint)}"
+            onsubmit="return onNewsletterSubmit(this, event)">
+        <input type="email" name="email" required autocomplete="email"
+               placeholder="you@example.com" aria-label="邮箱地址">
+        <!-- honeypot: bots auto-fill, humans leave empty -->
+        <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off">
+        {hidden_provider_fields}
+        <button type="submit" data-success="{_esc(success_msg)}">{_esc(button_label)}</button>
+      </form>
+    </section>""")
+
+
+# JS is identical on every page — inlined in the generated template rather than
+# a shared file because we target a zero-JS-build static site. Keep in sync
+# with the three render sites (home / episode / about).
+_NEWSLETTER_JS = """
+function onNewsletterSubmit(form, e) {
+  if (window.trackEvent) window.trackEvent('Subscribe Email');
+  // Let the native form POST submit (opens provider's success page in same tab).
+  // If you want inline success instead, uncomment the block below:
+  // e.preventDefault();
+  // fetch(form.action, { method: 'POST', body: new FormData(form) })
+  //   .then(r => r.ok ? form.querySelector('button').textContent = form.querySelector('button').dataset.success : null)
+  //   .catch(() => {});
+  return true;
+}
+"""
+
+_NEWSLETTER_CSS = """
+.newsletter {
+  margin: 28px 0; padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(240,194,127,0.06), rgba(124,111,247,0.04));
+  border: 1px solid rgba(240,194,127,0.2);
+  border-radius: 14px;
+  display: grid; gap: 10px;
+}
+.nl-title { font-size: 0.92rem; font-weight: 600; color: #f0c27f; letter-spacing: 0.02em; }
+.nl-desc { font-size: 0.78rem; color: #9a9ab0; line-height: 1.6; }
+.nl-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.nl-form input[type="email"] {
+  flex: 1 1 200px; min-width: 180px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #d4d4e0; padding: 8px 14px;
+  border-radius: 18px; font-size: 0.82rem;
+  font-family: inherit;
+}
+.nl-form input[type="email"]:focus {
+  outline: none; border-color: rgba(124,111,247,0.5);
+  background: rgba(255,255,255,0.07);
+}
+.nl-form button {
+  padding: 8px 20px; border-radius: 18px;
+  background: linear-gradient(135deg, #7c6ff7, #9b6ff7);
+  border: none; color: #fff;
+  font-size: 0.82rem; font-family: inherit; cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.nl-form button:hover { transform: translateY(-1px); }
+"""
+
+
 def _build_head_meta(episodes: list[dict], m: dict, base_url: str, cover_rel: str = "og/home.png") -> str:
     site_url = (base_url or (m or {}).get("site_url") or "").rstrip("/")
     tagline = _esc(m.get("brand_tagline") or PODCAST_DESC)
@@ -841,6 +941,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
     analytics_head = _build_analytics_head(m)
+    newsletter_html = _build_newsletter_form(m, context="episode")
 
     # Pre-filled share copy per platform — empowers fans to 1-click share with
     # platform-appropriate formatting (short for X/Weibo, long for XHS).
@@ -1194,6 +1295,9 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     }}
     .rel-title {{ font-size: 0.85rem; font-weight: 600; line-height: 1.4; margin-bottom: 4px; }}
     .rel-desc {{ font-size: 0.72rem; color: var(--dim); line-height: 1.5; }}
+
+    {_NEWSLETTER_CSS}
+
     .toast {{
       position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
       background: rgba(124,111,247,0.95); color: #fff;
@@ -1263,6 +1367,8 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         </article>
 
         {nav_html}
+
+        {newsletter_html}
 
         {related_html}
 
@@ -1411,6 +1517,8 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           }} catch (e) {{}}
         }};
       }}
+
+      {_NEWSLETTER_JS}
       </script>
     </body>
     </html>
@@ -2142,6 +2250,8 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
     if contact_email:
         contact_html = f'<p class="contact">有建议或合作意向？<a href="mailto:{_esc(contact_email)}">{_esc(contact_email)}</a></p>'
 
+    newsletter_html = _build_newsletter_form(m, context="about")
+
     return textwrap.dedent(f"""\
     <!DOCTYPE html>
     <html lang="zh-CN">
@@ -2222,6 +2332,9 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
       border-top: 1px solid var(--border); color: var(--dim);
     }}
     .contact a {{ color: var(--accent); }}
+
+    {_NEWSLETTER_CSS}
+
     code {{
       background: rgba(255,255,255,0.06); padding: 1px 7px;
       border-radius: 5px; font-family: ui-monospace, Menlo, monospace;
@@ -2267,8 +2380,13 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
         <h2>技术栈</h2>
         <p>开源自治——<a href="https://github.com/beerui/bedtime_story_agent" target="_blank" rel="noopener" style="color:var(--accent)">GitHub 源码</a>。文本用 Qwen（通义千问），语音用 CosyVoice（配额耗尽自动降级 edge-tts），封面用 Pillow 生成，站点是纯 HTML/CSS/JS 无任何框架。</p>
 
+        {newsletter_html}
+
         {contact_html}
       </div>
+      <script>
+      {_NEWSLETTER_JS}
+      </script>
     </body>
     </html>
     """)
@@ -2398,6 +2516,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     site_url = (base_url or (monetization or {}).get("site_url") or "").rstrip("/")
     absolute_feed = f"{site_url}/feed.xml" if site_url else "feed.xml"
     subscribe_html = _build_subscribe_html(monetization or {}, absolute_feed)
+    newsletter_html = _build_newsletter_form(monetization or {}, context="home")
 
     # Category filter chips — only render when a category has at least 1 episode
     cat_counts: dict[str, int] = {}
@@ -2626,6 +2745,8 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
       margin-top: 10px; line-height: 1.5;
     }}
 
+    {_NEWSLETTER_CSS}
+
     /* --- category filter chips --- */
     .filter-chips {{
       display: flex; flex-wrap: wrap; gap: 8px;
@@ -2737,6 +2858,8 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
 
       {subscribe_html}
 
+      {newsletter_html}
+
       {filter_chips_html}
 
       <main id="episodes">
@@ -2832,6 +2955,8 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         }});
       }});
     }})();
+
+    {_NEWSLETTER_JS}
 
     // --- Starfield ---
     (function() {{

@@ -84,7 +84,8 @@ cd site && python3 -m http.server 8888
 - **联盟商品网格**（蒸汽眼罩 / 白噪音机 / 降噪耳塞）
 - **会员墙**（占位，未启用）
 - **订阅按钮组**（Apple Podcasts / Spotify / 小宇宙 / Overcast / Bilibili，URL 未填则按钮不渲染）
-- **分析埋点**（Plausible / Umami / GA4 三选一）— 首页和所有单期页都会自动注入所选脚本；播放/暂停/完成(80%)/复制 RSS 已自带 custom events
+- **分析埋点**（Plausible / Umami / GA4 三选一）— 首页和所有单期页都会自动注入所选脚本；播放/暂停/完成(80%)/复制 RSS/分享/邮件订阅 已自带 custom events
+- **邮件订阅**（Newsletter）— 在 `monetization.json` 里填 `endpoint_url` 即启用；兼容 FormSubmit / Buttondown / Formspark / Formspree 等任何接收 HTML form POST 的服务；自动渲染到首页订阅区下方 + 单期页相关推荐上方 + 关于页底部
 
 `monetization.json` 已加入 `.gitignore`，不会被推到 public repo。
 

@@ -67,5 +67,14 @@
     "umami_script_url": "",
     "umami_website_id": "",
     "google_analytics_id": ""
+  },
+  "newsletter": {
+    "_comment": "邮件订阅：任何接收 HTML form POST 的服务都行。常见：FormSubmit.co（免注册，POST 到 https://formsubmit.co/你@邮箱.com 会转发到邮箱）、FormSubmit 别名（https://formsubmit.co/el/xxxxxx 隐藏邮箱）、Buttondown（https://buttondown.email/api/emails/embed-subscribe/你的用户名）、Formspark（https://submit-form.com/FORM_ID）、Formspree（https://formspree.io/f/FORM_ID）。留空或 enabled=false 则表单不渲染",
+    "enabled": false,
+    "endpoint_url": "",
+    "title": "每周收到一封",
+    "description": "每周一封精选助眠内容 + 新期提醒，任何时候可取消。",
+    "button_label": "订阅",
+    "success_message": "订阅成功 · 请查收邮件确认"
   }
 }
