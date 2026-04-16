@@ -141,6 +141,13 @@ jobs:
         id: pages
         uses: actions/configure-pages@v4
 
+      - name: Validate pipeline health
+        run: |
+          # Fail the workflow on hard errors (missing core files, corrupt audio,
+          # missing phase markers). Warnings (missing SRT/metadata on legacy
+          # episodes, duplicate day-themes) are surfaced but don't block deploy.
+          python3 validate.py
+
       - name: Generate site
         run: |
           python3 publish.py \

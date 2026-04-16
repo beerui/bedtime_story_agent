@@ -125,7 +125,10 @@ prosody.py        # 韵律弧线引擎
 batch.py          # 批量生产 CLI（按主题 ideal_duration_min 自动调字数）
 covers.py         # OG 社交分享封面生成（Pillow，1200x630）
 audio_tags.py     # ID3 元数据 + CHAP 章节嵌入（mutagen，让 Apple Podcasts 等看到章节）
-publish.py        # 站点生成（首页 + 单期页 + 分类页 + sitemap + RSS + 封面 + 订阅按钮 + 章节）
+validate.py       # 全管线健康检查（error/warning/info 分级，--json / --strict / --summary）
+backfill_chapter_titles.py  # 为老期补生成 chapter_titles.json 的一次性脚本
+seed_content.sh   # 把本地 outputs/ 推到 content 分支（给 Actions 播种内容）
+publish.py        # 站点生成（首页 + 单期页 + 分类页 + 主题页 + FAQ + About + sitemap + RSS + 封面 + 订阅按钮 + 章节 + 搜索 + 结构化数据）
 deploy.sh         # 一键推 gh-pages 分支
 dedup.py          # 内容去重
 main.py           # 交互式 CLI（完整视觉管线）

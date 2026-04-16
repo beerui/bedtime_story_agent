@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-04-17] 管线健康检查 validate.py + Actions 质量门 (validate.py + .github/workflows/daily.yml)
+**动因**: 22 期产出后没有工具验证数据完整性。某期可能缺 SRT 导致章节 UI 断层、chapter_titles.json 解析失败导致章节名退化、metadata.json 缺字段导致 RSS 描述默认化——这些问题只有逐个访问页面才能发现。需要一键跑完「全部 22 期是否符合生产规格」
+**实现**:
+1. 新增 `validate.py`，分级检查每个 Batch_ 文件夹：
+   - **error**：story/audio 缺失（但若 voice.mp3 存在降级为 warning`missing_mix`，可通过重跑 assemble 修复）、音频小于 50KB、剧本缺任一 `[阶段：X]` 标记、metadata 解析失败
+   - **warning**：SRT 缺失、chapter_titles 缺失/格式错、metadata 字段不全、同一天同主题多期（dedup 疑似失败）
+   - **info**：音频时长 <180s 或 >25min、tag 数 <3
+2. 跨文件夹检查：`duplicate_day_theme` 找重复的 (day, theme) 对
+3. CLI 选项：`--json`（CI 对接）、`--strict`（warning 也算失败）、`--summary`（只看总结）、`--only substr`（聚焦单文件夹）
+4. 优雅降级：publish.py 导入失败时用 bitrate 估算音频时长
+5. Actions workflow daily.yml 新增「Validate pipeline health」step，位于 Configure Pages 和 Generate site 之间：
+   - 默认严格度（warning 不阻断，error 阻断）
+   - 出 error 则整个 workflow 失败，阻止部署坏数据
+6. 实跑 22 期报告：17 期无问题 ✓，10 warning（3 期老数据缺 SRT/metadata，2 组 duplicate day-theme），1 info（老数据音频偏短），0 error
+**验证**: 
+- 人类可读模式每期分段列问题，severity 用颜色区分（error 红 / warning 黄 / info 灰）
+- JSON 模式可被 CI/监控脚本消费
+- 当前 outputs/ 状态下 exit 0（无 error）→ 不会阻断 workflow
+**下一步**:
+- 加 `--fix` 选项自动修复一些简单问题（例：voice.mp3 存在但无 final_audio → 自动调 engine.assemble_audio）
+- Actions 里可把 validate --json 结果 attach 成 PR comment，PR 时自动可见
+- 加跨期 TF-IDF 相似度检查（过于相似的 2 期警告：疑似 dedup 失败）
+
 ## [2026-04-17] 首页客户端搜索 + BreadcrumbList/SearchAction 结构化数据 (publish.py)
 **动因**: 22 期内容堆在首页，加上 4 分类芯片只能一级过滤——用户心里想的是「失眠」「加班」「AI」这些关键词，需要模糊匹配；SEO 侧少了两块关键结构化数据：BreadcrumbList（子页面导航上下文）和 WebSite SearchAction（Google sitelinks searchbox 曝光）
 **实现**:
