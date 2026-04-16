@@ -34,6 +34,7 @@ Thumbs.db
 *.log
 # Project outputs
 outputs/
+site/
 .pikiclaw/*
 !.pikiclaw/skills/
 !.pikiclaw/skills/**
