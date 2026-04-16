@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-04-17] 18 主题着陆页 + 主题总览 hub (publish.py)
+**动因**: 18 个主题各有完整心理学元数据（pain_point/technique/emotional_target/search_keywords），但只存在于 config.py——没有对应的可访问页面。访客搜「AI 焦虑 入睡」落到分类页太宽，真正需要的是直达 AI焦虑夜_数字排毒 主题。SEO 维度上少了 18 条长尾精准着陆机会
+**实现**:
+1. `generate_theme_page(theme_name, cfg, episodes, monetization, base_url)`：
+   - 每期 pain_point/technique/emotional_target/推荐时长 用 label-value 列表展示（spec block）
+   - 本主题节目卡片（如果有）
+   - 同分类其他主题推荐（rel-grid）
+   - category badge 作为面包屑跳回分类页
+   - footer 链接：全部主题 / 分类页 / 首页 / 关于 / RSS
+2. `generate_themes_hub(monetization, base_url)` → `site/themes.html`：4 分类 section，每个 section 列该类全部主题（按 config.THEMES 顺序），每主题一卡片显示 pain_point
+3. main() 遍历 `_THEMES`，只为有 `category` 的主题生成（过滤 custom/legacy 主题），输出到 `site/theme/{name}.html`——即使该主题暂无节目也生成（覆盖空状态 + 提前种 SEO 长尾）
+4. 导航全打通：
+   - 单期页 theme-badge 从跳分类页改为跳主题页（theme 比 category 更具体匹配搜索意图）
+   - 首页 header stats 加「主题 →」链接
+   - 单期页 footer-nav 加「全部主题」链接
+   - sitemap.xml 加 18 个 theme URL（priority 0.65）+ 1 个 themes.html（0.7）
+5. 主题页排版上亮点：spec block 用紫金半透明渐变边框，让心理学锚点一眼可读；episode-date 用暖金 monospace 字体，让时间轴视觉连贯
+**验证**: `python3 publish.py ...` 产出 `[OK] 主题页 × 18` + `[OK] 主题总览`；AI焦虑夜 那页完整展示：「此刻感受：被 AI 取代焦虑 + 数字过载」/「使用技术：具身化（Embodiment）锚定：用触觉/本体感将注意力拉回身体」/「听后状态：我是有身体的人、不可被替代的归属感」/「推荐时长：11 分钟」+ 2 期本主题节目 + 4 个同类相关主题；sitemap 含 18 条 theme URL
+**下一步**:
+- themes.html hub 的卡片点击触发 `Browse Theme` 埋点，统计哪个主题最受欢迎
+- 主题页可再加「这类场景的听众可能在搜什么」section（展示 search_keywords 作为长尾 list）
+- 18 个主题是否都能吸引足够内容持续产出？空主题一直挂着反而稀释站点质量——可考虑"最近 6 个月无新期"的主题自动下架
+
 ## [2026-04-17] 单期页播放器增强：倍速 + 睡眠定时器 (publish.py)
 **动因**: 单期页用的是浏览器原生 `<audio controls>`，只能播/停/拖——缺倍速（让人能边扫文稿边听）、缺睡眠定时器（助眠内容核心场景：听着听着睡着，不想醒来发现还在播）。首页浮动播放器有这俩，单期页没有是明显的体验洼地
 **实现**:

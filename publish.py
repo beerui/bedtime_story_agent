@@ -1135,7 +1135,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <body>
       <div class="wrap">
         <a class="back" href="../index.html">← 回到所有节目</a>
-        {'<a class="theme-badge" href="../category/' + _esc(theme_cfg.get('category', '')) + '.html">' if theme_cfg.get('category') else '<span class="theme-badge">'}{_esc(ep['theme'])}{'</a>' if theme_cfg.get('category') else '</span>'}
+        {'<a class="theme-badge" href="../theme/' + _esc(ep['theme']) + '.html">' if theme_cfg.get('category') else '<span class="theme-badge">'}{_esc(ep['theme'])}{'</a>' if theme_cfg.get('category') else '</span>'}
         <h1>{_esc(ep['title'])}</h1>
         <div class="meta">{ep['timestamp'].strftime('%Y-%m-%d')} · {ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</div>
         <div class="tags">{tags_html}</div>
@@ -1187,6 +1187,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
         <div class="footer-nav">
           <a href="../index.html">← 所有 {total_eps} 期</a>
+          <a href="../themes.html">全部主题</a>
           <a href="../about.html">关于</a>
           <a href="../feed.xml">RSS 订阅 →</a>
         </div>
@@ -1300,6 +1301,321 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         }};
       }}
       </script>
+    </body>
+    </html>
+    """)
+
+
+def generate_theme_page(theme_name: str, theme_cfg: dict, episodes: list[dict],
+                         monetization: dict, base_url: str) -> str:
+    """Single-theme focused page — targets the theme's search_keywords for
+    long-tail SEO, and surfaces the psychological framework (pain/technique/
+    target) so visitors arriving from a search can immediately see whether
+    this matches their need."""
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    cat_key = theme_cfg.get("category", "")
+    cat_cfg = (_THEME_CATEGORIES or {}).get(cat_key) or {}
+    canonical = f"{site_url}/theme/{theme_name}.html" if site_url else f"theme/{theme_name}.html"
+    og_image = f"{site_url}/og/home.png" if site_url else "../og/home.png"
+    analytics_head = _build_analytics_head(m)
+
+    pain = theme_cfg.get("pain_point", "").strip()
+    technique = theme_cfg.get("technique", "").strip()
+    target = theme_cfg.get("emotional_target", "").strip()
+    ideal_min = theme_cfg.get("ideal_duration_min", 0) or 0
+    keywords = theme_cfg.get("search_keywords", []) or []
+    description = (pain or "") + "。" + (technique or "")
+
+    # Episodes of this theme
+    theme_eps = [e for e in episodes if e.get("theme") == theme_name]
+
+    # Related themes: other themes in same category
+    related = []
+    for nm, cfg in (_THEMES or {}).items():
+        if nm == theme_name:
+            continue
+        if cfg.get("category") != cat_key:
+            continue
+        related.append((nm, cfg))
+
+    ep_cards: list[str] = []
+    if theme_eps:
+        for ep in theme_eps:
+            tags_html = "".join(f'<span class="tag">{_esc(t)}</span>' for t in ep["tags"][:3])
+            ep_cards.append(f"""
+          <a class="ep-card" href="../episodes/{_esc(_episode_slug(ep))}.html">
+            <div class="ep-head">
+              <span class="ep-date">{ep['timestamp'].strftime('%Y-%m-%d')}</span>
+              <span class="ep-meta">{_fmt_duration(ep['duration'])}</span>
+            </div>
+            <h3 class="ep-title">{_esc(ep['title'])}</h3>
+            <p class="ep-desc">{_esc((ep.get('description') or '')[:100])}</p>
+            <div class="ep-tags">{tags_html}</div>
+          </a>""")
+    else:
+        ep_cards.append('<p class="empty-note">此主题暂无节目——下次生产会补齐。</p>')
+
+    related_cards: list[str] = []
+    for nm, cfg in related[:4]:
+        rp = cfg.get("pain_point", "")[:48]
+        related_cards.append(
+            f'<a class="rel-theme" href="{_esc(nm)}.html">'
+            f'<div class="rel-name">{_esc(nm)}</div>'
+            f'<div class="rel-pain">{_esc(rp)}</div></a>'
+        )
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{_esc(theme_name)} · {_esc(PODCAST_TITLE)}</title>
+    <meta name="description" content="{_esc(description[:160])}">
+    <meta name="keywords" content="{_esc(','.join(keywords + [theme_name, '助眠', '睡眠']))}">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="{_esc(theme_name)} · {_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="{_esc(description[:160])}">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{_esc(og_image)}">
+    {analytics_head}
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.75;
+    }}
+    .wrap {{ max-width: 720px; margin: 0 auto; padding: 36px 20px 80px; }}
+    .back {{ color: var(--dim); text-decoration: none; font-size: 0.82rem; }}
+    .back:hover {{ color: var(--accent); }}
+    .cat-badge {{
+      display: inline-block;
+      font-size: 0.72rem; color: var(--accent);
+      background: rgba(124,111,247,0.12);
+      padding: 3px 12px; border-radius: 20px;
+      text-decoration: none; margin: 18px 0 10px;
+    }}
+    h1 {{
+      font-size: 1.8rem; margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .spec {{
+      background: linear-gradient(135deg, rgba(124,111,247,0.06), rgba(240,194,127,0.03));
+      border: 1px solid rgba(124,111,247,0.18);
+      border-radius: 14px; padding: 18px 22px;
+      margin: 20px 0 32px; display: grid; gap: 10px;
+    }}
+    .spec-row {{ display: flex; gap: 14px; font-size: 0.88rem; line-height: 1.6; }}
+    .spec-label {{
+      color: var(--warm); font-weight: 500;
+      min-width: 92px; flex-shrink: 0;
+    }}
+    .spec-val {{ color: var(--text); flex: 1; }}
+    h2 {{
+      font-size: 1.05rem; font-weight: 600;
+      margin: 32px 0 12px;
+      border-left: 3px solid var(--accent); padding-left: 10px;
+    }}
+    .ep-card {{
+      display: block; padding: 14px 18px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; margin-bottom: 10px;
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .ep-card:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.3);
+    }}
+    .ep-head {{ display: flex; justify-content: space-between; margin-bottom: 6px; }}
+    .ep-date {{ font-size: 0.72rem; color: var(--warm); font-family: ui-monospace, Menlo, monospace; }}
+    .ep-meta {{ font-size: 0.72rem; color: var(--dim); }}
+    .ep-title {{ font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }}
+    .ep-desc {{ font-size: 0.82rem; color: var(--dim); margin-bottom: 6px; }}
+    .ep-tags {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+    .tag {{
+      font-size: 0.68rem; color: var(--dim);
+      background: rgba(255,255,255,0.05);
+      padding: 1px 7px; border-radius: 10px;
+    }}
+    .rel-grid {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }}
+    .rel-theme {{
+      display: block; padding: 12px 16px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .rel-theme:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.3);
+    }}
+    .rel-name {{ font-size: 0.88rem; font-weight: 600; margin-bottom: 4px; }}
+    .rel-pain {{ font-size: 0.74rem; color: var(--dim); }}
+    .empty-note {{
+      color: var(--dim); text-align: center; padding: 30px 16px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px;
+    }}
+    .footer {{
+      margin-top: 40px; padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex; flex-wrap: wrap; gap: 14px;
+      font-size: 0.8rem; color: var(--dim);
+    }}
+    .footer a {{ color: var(--dim); text-decoration: none; }}
+    .footer a:hover {{ color: var(--accent); }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="../index.html">← 全部节目</a>
+        <a class="cat-badge" href="../category/{_esc(cat_key)}.html">{_esc(cat_cfg.get('label', cat_key))}</a>
+        <h1>{_esc(theme_name)}</h1>
+
+        <section class="spec">
+          {'<div class="spec-row"><span class="spec-label">此刻感受</span><span class="spec-val">' + _esc(pain) + '</span></div>' if pain else ''}
+          {'<div class="spec-row"><span class="spec-label">使用技术</span><span class="spec-val">' + _esc(technique) + '</span></div>' if technique else ''}
+          {'<div class="spec-row"><span class="spec-label">听后状态</span><span class="spec-val">' + _esc(target) + '</span></div>' if target else ''}
+          {'<div class="spec-row"><span class="spec-label">推荐时长</span><span class="spec-val">' + str(ideal_min) + ' 分钟</span></div>' if ideal_min else ''}
+        </section>
+
+        <h2>本主题节目（{len(theme_eps)} 期）</h2>
+        {''.join(ep_cards)}
+
+        {'<h2>同分类其他主题</h2><div class="rel-grid">' + ''.join(related_cards) + '</div>' if related_cards else ''}
+
+        <div class="footer">
+          <a href="../themes.html">全部主题</a>
+          <a href="../category/{_esc(cat_key)}.html">{_esc(cat_cfg.get('label', cat_key))} 分类</a>
+          <a href="../index.html">首页</a>
+          <a href="../about.html">关于</a>
+          <a href="../feed.xml">RSS</a>
+        </div>
+      </div>
+    </body>
+    </html>
+    """)
+
+
+def generate_themes_hub(monetization: dict, base_url: str) -> str:
+    """Master taxonomy page listing all 18 themes grouped by 4 categories."""
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    canonical = f"{site_url}/themes.html" if site_url else "themes.html"
+    og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
+    analytics_head = _build_analytics_head(m)
+
+    sections: list[str] = []
+    for cat_key, cat_cfg in (_THEME_CATEGORIES or {}).items():
+        items = []
+        for nm, cfg in (_THEMES or {}).items():
+            if cfg.get("category") != cat_key:
+                continue
+            pain = cfg.get("pain_point", "")[:48]
+            items.append(
+                f'<a class="theme-item" href="theme/{_esc(nm)}.html">'
+                f'<div class="t-name">{_esc(nm)}</div>'
+                f'<div class="t-pain">{_esc(pain)}</div></a>'
+            )
+        if not items:
+            continue
+        sections.append(f"""
+        <section class="cat-section">
+          <a class="cat-header" href="category/{_esc(cat_key)}.html">
+            <h2>{_esc(cat_cfg.get('label', cat_key))}</h2>
+            <span class="cat-count">{len(items)} 个主题 →</span>
+          </a>
+          <p class="cat-desc">{_esc(cat_cfg.get('description', ''))}</p>
+          <div class="t-grid">{''.join(items)}</div>
+        </section>""")
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全部主题 · {_esc(PODCAST_TITLE)}</title>
+    <meta name="description" content="18 个主题，4 大分类——按搜索意图或痛点浏览所有助眠主题。">
+    <meta name="keywords" content="助眠主题,助眠分类,失眠,ACT,认知解离,裁员焦虑,AI焦虑,相亲压力,父母健康,失恋">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:title" content="全部主题 · {_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="18 个主题，4 大分类——按搜索意图或痛点浏览所有助眠主题。">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{_esc(og_image)}">
+    {analytics_head}
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.75;
+    }}
+    .wrap {{ max-width: 820px; margin: 0 auto; padding: 40px 20px 80px; }}
+    .back {{ color: var(--dim); text-decoration: none; font-size: 0.85rem; }}
+    .back:hover {{ color: var(--accent); }}
+    h1 {{
+      font-size: 1.8rem; margin: 18px 0 8px;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .lede {{ color: var(--dim); font-size: 0.95rem; margin-bottom: 32px; }}
+    .cat-section {{ margin-bottom: 40px; }}
+    .cat-header {{
+      display: flex; justify-content: space-between; align-items: baseline;
+      color: var(--text); text-decoration: none;
+      border-left: 3px solid var(--accent); padding-left: 10px;
+      margin-bottom: 8px;
+    }}
+    .cat-header:hover h2 {{ color: var(--accent); }}
+    .cat-header h2 {{ font-size: 1.05rem; font-weight: 600; }}
+    .cat-count {{ font-size: 0.78rem; color: var(--dim); }}
+    .cat-desc {{ font-size: 0.85rem; color: var(--dim); margin-bottom: 14px; padding-left: 13px; }}
+    .t-grid {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }}
+    .theme-item {{
+      display: block; padding: 14px 16px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .theme-item:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.3);
+      transform: translateY(-1px);
+    }}
+    .t-name {{ font-size: 0.9rem; font-weight: 600; margin-bottom: 5px; }}
+    .t-pain {{ font-size: 0.74rem; color: var(--dim); line-height: 1.5; }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="index.html">← 回到首页</a>
+        <h1>全部主题</h1>
+        <p class="lede">18 个主题，按「你此刻的感受」分 4 类——找到最贴合的那一条路径。</p>
+        {''.join(sections)}
+      </div>
     </body>
     </html>
     """)
@@ -1671,6 +1987,24 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
         urls.append(f"""  <url>
     <loc>{cloc}</loc>
     <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>""")
+    # theme pages — one per configured theme with a category
+    for theme_name, theme_cfg in (_THEMES or {}).items():
+        if not theme_cfg.get("category"):
+            continue
+        tloc = f"{base}/theme/{theme_name}.html" if base else f"theme/{theme_name}.html"
+        urls.append(f"""  <url>
+    <loc>{tloc}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.65</priority>
+  </url>""")
+    # themes taxonomy hub
+    if _THEMES and _THEME_CATEGORIES:
+        themes_loc = f"{base}/themes.html" if base else "themes.html"
+        urls.append(f"""  <url>
+    <loc>{themes_loc}</loc>
+    <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>""")
     about_loc = f"{base}/about.html" if base else "about.html"
@@ -2065,6 +2399,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         <div class="stats">
           <span><b>{total_eps}</b> 期节目</span>
           <span><b>{_fmt_duration(total_dur)}</b> 总时长</span>
+          <a class="stats-link" href="themes.html">主题 →</a>
           <a class="stats-link" href="about.html">关于 →</a>
         </div>
       </header>
@@ -2450,6 +2785,27 @@ def main():
         cat_generated += 1
     if cat_generated:
         print(f"[OK] 分类页 × {cat_generated} → {category_dir}")
+
+    # generate per-theme landing pages (one per configured theme, covers themes
+    # without episodes so the taxonomy is complete even pre-content)
+    theme_dir = SITE_DIR / "theme"
+    theme_dir.mkdir(exist_ok=True)
+    theme_generated = 0
+    for theme_name, theme_cfg in (_THEMES or {}).items():
+        if not theme_cfg.get("category"):
+            continue  # skip legacy/custom themes without metadata
+        page = generate_theme_page(theme_name, theme_cfg, episodes, monetization, args.base_url)
+        (theme_dir / f"{theme_name}.html").write_text(page, encoding="utf-8")
+        theme_generated += 1
+    if theme_generated:
+        print(f"[OK] 主题页 × {theme_generated} → {theme_dir}")
+
+    # themes taxonomy hub (one page linking to all themes grouped by category)
+    if _THEMES and _THEME_CATEGORIES:
+        (SITE_DIR / "themes.html").write_text(
+            generate_themes_hub(monetization, args.base_url), encoding="utf-8"
+        )
+        print(f"[OK] 主题总览 → {SITE_DIR / 'themes.html'}")
 
     # generate RSS feed
     rss = generate_rss(episodes, args.base_url)
