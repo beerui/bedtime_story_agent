@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-04-17] Image Sitemap：Google Images 抓取 66 张封面 (publish.py)
+**动因**: 我们产了 22 张 OG 横图（1200x630）+ 22 张方形 cover（1400x1400）+ 22 张 hero 场景图（1024x1792）——三种比例各司其职。但 sitemap.xml 只列 HTML URL，Google Images 爬虫找不到这些图。Google Images 是视觉搜索入口，也是外链流量源，暴露出来是零成本 SEO 升级
+**实现**: 
+1. `generate_sitemap` 在 urlset 根加 `xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"` 命名空间
+2. 每个 episode URL 的 `<url>` 内嵌 3 个 `<image:image>`：
+   - `og/{folder}.png`（社交分享横图）
+   - `covers/{folder}.png`（podcast 方图）
+   - `scenes/{folder}.png`（hero 竖图）
+3. 每个 image 带 `<image:caption>` = 期标题（html_mod.escape 处理特殊字符）
+4. 其他 URL（主页/about/主题/分类）暂不加图片条目——节目页才是图片重心
+**验证**: 
+- sitemap.xml 含 66 个 `<image:image>` 组（22 × 3）
+- 每组正确指向 og/covers/scenes 三个目录
+- doctor.py 通过（202 项资源无错无警告）
+- validate.py exit 0
+**SEO 价值**: 
+- Google Search Console 提交 sitemap 后，Google Images 开始索引这些图
+- 用户在 Google Images 搜"助眠 故事"、"深夜咖啡馆"等视觉词能看到我们的封面
+- 图片点击进站——多一条非关键词搜索的流量入口
+- OG 横图作为社交分享时，Google 认识到同一图片用在多处，提升其权威度
+
 ## [2026-04-17] 内容质量审计 + 尾声韵律检查 (validate.py + EVOLUTION_LOG)
 **动因**: 前面 7 轮写了新 5 个 2026 主题（AI焦虑/分手/父母/相亲/失业）+ enriched LLM prompt 框架——但只早期抽读过 AI焦虑 一期。其他 4 个主题的脚本是否真落地心理学原则，从未系统验证。"设计好" ≠ "实际产出好"
 **做法**: 逐一读 4 个新主题的 story_draft.txt 前段 + 尾声段

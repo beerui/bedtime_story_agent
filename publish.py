@@ -3305,7 +3305,10 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
 
 
 def generate_sitemap(episodes: list[dict], base_url: str) -> str:
-    """XML sitemap listing all pages — helps Google/Bing index the long-tail."""
+    """XML sitemap listing all pages — helps Google/Bing index the long-tail.
+
+    Uses Google's Image Sitemap extension (xmlns:image) to surface per-episode
+    OG cards + square covers + hero scenes for Google Images ranking."""
     base = (base_url or "").rstrip("/")
     urls: list[str] = []
     homepage = f"{base}/" if base else "./"
@@ -3317,11 +3320,29 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     for ep in episodes:
         loc = f"{base}/episodes/{_episode_slug(ep)}.html" if base else f"episodes/{_episode_slug(ep)}.html"
         lastmod = ep["timestamp"].strftime("%Y-%m-%d")
+        # Image Sitemap entries: OG landscape card (social), square podcast cover,
+        # optional hero scene. Each extends the URL's indexability for Google Images.
+        folder = _episode_slug(ep)
+        image_blocks = []
+        for rel in (f"og/{folder}.png", f"covers/{folder}.png", f"scenes/{folder}.png"):
+            img_loc = f"{base}/{rel}" if base else rel
+            # Caption from ep title; description from ep description (truncated)
+            cap = (ep.get("title") or ep.get("theme") or "").strip()
+            # XML-escape minimal set
+            cap_x = html_mod.escape(cap, quote=False)
+            image_blocks.append(
+                f"""    <image:image>
+      <image:loc>{img_loc}</image:loc>
+      <image:caption>{cap_x}</image:caption>
+    </image:image>"""
+            )
+        images_xml = "\n".join(image_blocks)
         urls.append(f"""  <url>
     <loc>{loc}</loc>
     <lastmod>{lastmod}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+{images_xml}
   </url>""")
     # category landing pages — only include categories that actually have episodes
     cat_keys_used: set[str] = set()
@@ -3381,7 +3402,8 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
   </url>""")
     body = "\n".join(urls)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 {body}
 </urlset>
 """
