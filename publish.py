@@ -30,6 +30,12 @@ try:
 except Exception:
     _covers = None
 
+try:
+    from config import THEMES as _THEMES, THEME_CATEGORIES as _THEME_CATEGORIES
+except Exception:
+    _THEMES = {}
+    _THEME_CATEGORIES = {}
+
 ROOT_DIR = Path(__file__).parent
 OUTPUTS_DIR = ROOT_DIR / "outputs"
 SITE_DIR = ROOT_DIR / "site"
@@ -679,6 +685,23 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     transcript_html = render_script_html(ep["draft_full"])
     tags_html = "".join(f'<span class="tag">{_esc(t)}</span>' for t in ep["tags"][:6])
 
+    # SEO: combine theme-level search_keywords (from config) + episode tags (from metadata.json)
+    # Theme keywords target the search intent; episode tags are content-specific.
+    theme_cfg = _THEMES.get(ep["theme"]) or {}
+    theme_keywords = theme_cfg.get("search_keywords") or []
+    category_key = theme_cfg.get("category")
+    category_cfg = _THEME_CATEGORIES.get(category_key) if category_key else None
+    category_keywords = category_cfg.get("seo_keywords", []) if category_cfg else []
+    # dedup while preserving order
+    seen = set()
+    keywords: list[str] = []
+    for kw in [*theme_keywords, *category_keywords, *ep["tags"], "助眠", "睡眠", "冥想"]:
+        k = kw.strip()
+        if k and k not in seen:
+            seen.add(k)
+            keywords.append(k)
+    keywords_meta = ",".join(keywords[:12])
+
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
     analytics_head = _build_analytics_head(m)
 
@@ -730,7 +753,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{_esc(ep['title'])} | {_esc(PODCAST_TITLE)}</title>
     <meta name="description" content="{_esc(desc_plain[:160])}">
-    <meta name="keywords" content="{_esc('助眠,睡眠,冥想,' + ','.join(ep['tags'][:5]))}">
+    <meta name="keywords" content="{_esc(keywords_meta)}">
     <link rel="canonical" href="{_esc(canonical)}">
     <meta property="og:type" content="article">
     <meta property="og:title" content="{_esc(ep['title'])}">

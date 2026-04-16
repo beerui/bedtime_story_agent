@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-04-17] 主题重构：从「场景名字」到「搜索+痛点+技术」三位一体 (config.py + publish.py)
+**动因**: 用户指出「主题是一开始乱写的，要让主题有价值」。旧的 13 个主题只有 story_prompt + image_prompt + bgm_file 三个生成字段——不知道谁会搜到、为什么听、用了什么技术。主题是产线最上游的资产，这里不对齐，后面的 SEO/订阅/变现都是空转
+**实现**:
+1. 新增主题设计契约（config.py 顶部注释）：每个主题必须回答"听众搜什么/痛点是什么/用什么技术"三个问题。对齐这三者才叫「有价值」
+2. 每个主题新增 6 个字段：`category`（分类 key）、`pain_point`（一句话情绪定位）、`technique`（心理/感官技术）、`search_keywords`（3-6 个 SEO 关键词）、`ideal_duration_min`（推荐时长）、`emotional_target`（听后状态）
+3. 新增 5 个 2026 时代痛点主题（搜索热度验证过的高增长词）：
+   - `失业缓冲期_职业空窗`：裁员焦虑、中年危机
+   - `AI焦虑夜_数字排毒`：AI 取代恐慌、具身化锚定技术
+   - `相亲过后_接纳单身`：催婚压力、去商品化叙事
+   - `父母渐老_生命的重量`：父母健康焦虑、可控动作锚定
+   - `分手那晚_安静告别`：失恋、象征性「合上」
+4. THEME_VOICE_MAP 为 5 个新主题都匹配了音色（男声沉稳 / 女声温暖 / 女声温柔）
+5. 新增 `THEME_CATEGORIES` 字典让 4 大类（自然解压/临床技术/情绪共鸣/时代痛点）成为一等公民，带 label + description + seo_keywords
+6. publish.py 打通主题元数据：单期页 `<meta name="keywords">` 现在=主题 search_keywords + 分类 seo_keywords + 节目 tags 去重取前 12 个
+**验证**: 18 个主题全部通过字段契约校验；向后兼容——`story_prompt/image_prompt/bgm_file` 都在；engine.py/batch.py 无需改动；每期页 keywords 从原来的 "助眠,睡眠,冥想,<random tag>" 升级成 12 个精准长尾词（例："雨夜 助眠, 木屋 ASMR, 下雨 故事, 雨声 入睡, 安全感 冥想, 助眠故事, 白噪音, ASMR, 自然声, 睡前放松, 助眠, 睡眠"）
+**下一步**:
+- batch.py 应该读 `ideal_duration_min` 自动调 --words（当前全局固定 600 字）
+- engine.py 的 story generation prompt 可以注入 `pain_point` 和 `technique`，让 LLM 写稿时有更明确的心理目标
+- publish.py 首页可加主题筛选芯片（按 category 分组），让访客按需求而非按日期浏览
+- 5 个新主题首次生产后要人工听一次，评估 story_prompt 是否真能引导出预期的情绪基调
+
 ## [2026-04-17] GitHub Actions 自动化生产+部署 (.github/workflows/daily.yml + docs)
 **动因**: 用户明确选择走 Actions 路（而非 gh-pages 分支）——内容复利需要每日稳定产出，本机部署依赖我开机不现实
 **实现**:
