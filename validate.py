@@ -126,6 +126,24 @@ def check_episode(folder: Path) -> list[dict]:
         elif duration > 25 * 60:
             add("info", "audio_too_long", f"音频 {duration//60}m{duration%60}s 超 25 分钟（偏离睡前黄金区间）")
 
+        # LUFS 响度窗口检查——助眠内容应落在 [-28, -20] LUFS 区间
+        # 用延迟 import 避免把 audio_fx 的 soundfile/ffmpeg 依赖带到纯结构校验路径
+        try:
+            import audio_fx
+            if audio_fx.available():
+                lufs = audio_fx.measure_lufs(audio)
+                if lufs is None:
+                    add("info", "lufs_unmeasurable", "LUFS 测量失败（audio_fx 异常）")
+                elif lufs < -28:
+                    add("warning", "lufs_too_quiet",
+                        f"音频 {lufs:.1f} LUFS 偏静（目标区间 -28 ~ -20）——跑 backfill_loudness.py 修复")
+                elif lufs > -20:
+                    add("warning", "lufs_too_loud",
+                        f"音频 {lufs:.1f} LUFS 偏响（目标区间 -28 ~ -20，睡前应更安静）")
+                # else: 在窗口内，不报
+        except ImportError:
+            pass  # audio_fx 可用性已在内部判断
+
     # --- Story markup ---
     try:
         story_text = story.read_text(encoding="utf-8")

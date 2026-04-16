@@ -4,6 +4,22 @@
 
 ---
 
+## [2026-04-17] validate.py 加响度窗口检查：防止未来响度退化 (validate.py)
+**动因**: 上轮做了 LUFS 归一把 22 期压进 [-26.1, -25.6] 跨度 0.5dB。但如果将来有人：(a) 把 `NORMALIZE_LUFS` 设成极端值 / (b) 关掉归一直接合成 / (c) 用老版本 engine——新期音频会脱离目标窗口，没有工具会报。validate.py 只查结构完整性，音频是黑盒
+**实现**:
+1. `validate.check_episode` 在音频健康段（已查 corrupt / 时长）后，用 `audio_fx.measure_lufs` 对每期 final_audio.mp3 测响度
+2. 三档结果：
+   - `-28 ≤ LUFS ≤ -20`：在窗口内，不报
+   - `LUFS < -28`：`warning lufs_too_quiet` "偏静，跑 backfill_loudness.py 修复"
+   - `LUFS > -20`：`warning lufs_too_loud` "偏响，睡前应更安静"
+   - 测量失败：`info lufs_unmeasurable`
+3. 延迟 import audio_fx（try/except）——audio_fx 依赖 ffmpeg/pyloudnorm，CI 环境或 audio_fx 未装时自动跳过，不阻塞结构校验
+**验证**: 对 22 期现状跑——0 LUFS 警告（全部落在窗口内），证实上轮归一的成果。exit code 仍 0（warning 不阻断）
+**下一步**:
+- 可加 true-peak 检查（峰值 dBTP）防止喇叭爆音
+- 可加 LRA（loudness range）检查——太大说明动态不稳，太小说明压缩过头
+- 未来做 `album-level` normalization 时需要检查跨期均值而不是单期
+
 ## [2026-04-17] launch.py 启动前诊断：把分散文档变成一条命令 (launch.py + README)
 **动因**: 32 轮迭代下来功能齐全但**用户配置/部署动作分散在 3 个文档里**（README + GITHUB_ACTIONS_SETUP + SUBMIT_PODCAST）。用户打开 repo 面对大量信息，"我到底该做什么"不是一眼能看到的。给一条命令：`python3 launch.py` → 一屏告知当前所有状态 + 下一步具体动作
 **实现**:
