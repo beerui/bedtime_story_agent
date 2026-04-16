@@ -804,6 +804,24 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
     analytics_head = _build_analytics_head(m)
 
+    # Pre-filled share copy per platform — empowers fans to 1-click share with
+    # platform-appropriate formatting (short for X/Weibo, long for XHS).
+    pain_for_share = (theme_cfg.get("pain_point", "") or "").strip()
+    tech_for_share = (theme_cfg.get("technique", "") or "").split("：")[0].strip() or "心理学助眠技术"
+    share_texts = {
+        "x": f"{ep['title']}｜{PODCAST_TITLE}\n{pain_for_share}—用 {tech_for_share} 引导。",
+        "weibo": f"#助眠电台# 【{ep['theme']}】{ep['title']}\n{pain_for_share}\n用{tech_for_share}——{ep['word_count']}字 · {_fmt_duration(ep['duration'])}",
+        "xhs": (
+            f"【{ep['theme']}】{ep['title']}\n\n"
+            f"✨ 此刻的感受：{pain_for_share}\n"
+            f"🧠 使用的技术：{theme_cfg.get('technique', '助眠冥想')}\n"
+            f"🌙 听后的状态：{theme_cfg.get('emotional_target', '放松入眠')}\n\n"
+            f"时长 {_fmt_duration(ep['duration'])}，AI 生成但心理学锚点手工设计。"
+            f"\n\n#助眠 #失眠 #冥想 #{ep['theme']} #心理学"
+        ),
+        "wechat": f"{ep['title']} | {PODCAST_TITLE}\n{pain_for_share}",
+    }
+
     # Chapters — one per [阶段：X] marker. Renders as clickable navigation below
     # the player so returning listeners can jump to e.g. the body-scan section.
     chapters = extract_chapters(ep.get("draft_full", ""), ep.get("srt", ""))
@@ -989,13 +1007,28 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       padding: 1px 6px; border-radius: 8px;
     }}
     body.pc-dimmed {{ opacity: 0.3; transition: opacity 1.5s ease; }}
-    .share {{ display: flex; gap: 10px; margin-top: 12px; }}
-    .share button {{
+    .share-wrap {{ position: relative; margin-top: 12px; }}
+    .share-btn {{
       background: none; border: 1px solid var(--border);
       color: var(--text); padding: 6px 14px; border-radius: 18px;
-      cursor: pointer; font-size: 0.78rem; transition: all 0.2s;
+      cursor: pointer; font-size: 0.78rem; font-family: inherit;
+      transition: all 0.2s;
     }}
-    .share button:hover {{ border-color: var(--accent); color: var(--accent); }}
+    .share-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+    .share-menu {{
+      position: absolute; top: 100%; left: 0; margin-top: 6px;
+      background: rgba(20,20,50,0.97); border: 1px solid var(--border);
+      border-radius: 10px; padding: 6px 0; min-width: 200px;
+      display: none; z-index: 5;
+    }}
+    .share-menu.show {{ display: block; }}
+    .share-menu button {{
+      display: block; width: 100%; text-align: left;
+      padding: 8px 16px; background: none; border: none;
+      color: var(--text); font-size: 0.82rem; cursor: pointer;
+      font-family: inherit;
+    }}
+    .share-menu button:hover {{ background: rgba(255,255,255,0.06); color: var(--accent); }}
     .summary {{
       background: var(--card); border: 1px solid var(--border);
       border-radius: 12px; padding: 14px 18px; margin-bottom: 32px;
@@ -1165,9 +1198,15 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
             </div>
           </div>
           <audio controls preload="metadata" src="{_esc(audio_src)}"></audio>
-          <div class="share">
-            <button onclick="shareEp()">📤 分享</button>
-            <button onclick="copyLink()">🔗 复制链接</button>
+          <div class="share-wrap">
+            <button class="share-btn" onclick="toggleShareMenu()">📤 分享到…</button>
+            <div class="share-menu" id="shareMenu">
+              <button onclick="shareTo('x')">𝕏 Twitter</button>
+              <button onclick="shareTo('weibo')">微博</button>
+              <button onclick="shareTo('xhs')">小红书（复制长文）</button>
+              <button onclick="shareTo('wechat')">微信（复制链接+文案）</button>
+              <button onclick="copyLink()">🔗 仅复制链接</button>
+            </div>
           </div>
         </div>
 
@@ -1188,6 +1227,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         <div class="footer-nav">
           <a href="../index.html">← 所有 {total_eps} 期</a>
           <a href="../themes.html">全部主题</a>
+          <a href="../faq.html">FAQ</a>
           <a href="../about.html">关于</a>
           <a href="../feed.xml">RSS 订阅 →</a>
         </div>
@@ -1195,16 +1235,45 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
       <div class="toast" id="toast">已复制</div>
       <script>
-      function shareEp() {{
+      const SHARE_TEXTS = {json.dumps(share_texts, ensure_ascii=False)};
+
+      function toggleShareMenu() {{
+        document.getElementById('shareMenu').classList.toggle('show');
+      }}
+      document.addEventListener('click', (e) => {{
+        if (!e.target.closest('.share-wrap')) {{
+          document.getElementById('shareMenu')?.classList.remove('show');
+        }}
+      }});
+
+      function shareTo(platform) {{
         const url = location.href;
-        const title = {json.dumps(share_text, ensure_ascii=False)};
-        if (navigator.share) {{
-          navigator.share({{ title, url }}).catch(() => {{}});
+        const text = SHARE_TEXTS[platform] || '';
+        const fullText = text + '\\n\\n' + url;
+        if (window.trackEvent) window.trackEvent('Share Episode', {{ platform }});
+        document.getElementById('shareMenu').classList.remove('show');
+        if (platform === 'x') {{
+          // X / Twitter share intent — auto-fill tweet
+          window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url), '_blank', 'noopener');
+        }} else if (platform === 'weibo') {{
+          // Weibo share — their intent URL
+          window.open('https://service.weibo.com/share/share.php?url=' + encodeURIComponent(url) + '&title=' + encodeURIComponent(text), '_blank', 'noopener');
         }} else {{
-          copyLink();
+          // XHS and WeChat: no web share intent, copy full text for paste
+          navigator.clipboard.writeText(fullText).then(() => {{
+            const t = document.getElementById('toast');
+            t.textContent = platform === 'xhs' ? '小红书文案已复制，去粘贴发帖' : '已复制（链接+文案）';
+            t.classList.add('show');
+            setTimeout(() => {{
+              t.classList.remove('show');
+              t.textContent = '已复制';
+            }}, 2200);
+          }});
         }}
       }}
+
       function copyLink() {{
+        if (window.trackEvent) window.trackEvent('Share Episode', {{ platform: 'copy_link' }});
         navigator.clipboard.writeText(location.href).then(() => {{
           const t = document.getElementById('toast');
           t.classList.add('show');
@@ -1765,6 +1834,169 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     """)
 
 
+def generate_faq_page(monetization: dict, base_url: str) -> str:
+    """FAQ page with inline FAQPage JSON-LD — eligible for Google rich snippets.
+
+    Covers the skeptical-visitor funnel questions (AI-generated? Does it work?
+    How to subscribe? How you make money?) — answers directly feed the search
+    engine's "People also ask" panel."""
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    canonical = f"{site_url}/faq.html" if site_url else "faq.html"
+    og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
+    analytics_head = _build_analytics_head(m)
+
+    qa_pairs = [
+        (
+            "这些助眠故事是 AI 生成的吗？能信吗？",
+            "是。剧本由 Qwen 大模型生成，分三轮（大纲 → 扩写 → 润色），每篇完成后走 5 维 100 分制质量评估，低于 70 自动按反馈重写一次。每个主题都有明确的心理学锚点（痛点 / 技术 / 目标状态）注入 prompt——不是随机生成，而是按专业框架产出。生产流程完全透明，见关于页。"
+        ),
+        (
+            "真的能帮我入睡吗？依据是什么？",
+            "基于循证心理学技术：ACT 认知解离（停止反刍思维）、Safe Place Imagery（安全岛意象）、Autogenic Training（自律训练法诱发副交感神经）、Body Scan（躯体扫描）、心理退行（回到低心理负荷的童年状态）。每一类主题对应一种技术。音频用韵律弧线引擎把语速从 1.0× 渐变到 0.55×，音量从 1.0 降到 0.3，模拟真人催眠师的节奏变化。"
+        ),
+        (
+            "一集多长合适？",
+            "推荐 10-15 分钟。每个主题都声明了 ideal_duration_min（见主题页）：快速放松类 10 分钟，完整身体扫描类 15 分钟，情绪共鸣类 11 分钟。入睡前听 1-2 集即可。"
+        ),
+        (
+            "怎么订阅到播客 App？",
+            "首页订阅区可以一键：Apple Podcasts 用 podcasts:// 协议直接唤起本机播客 App 订阅，无需提交目录；Spotify / 小宇宙 / Overcast / Bilibili 等按钮会跳到对应页面（如已配置）；RSS 按钮直接复制 feed 地址到任何播客 App。"
+        ),
+        (
+            "为什么不同主题用不同声音？",
+            "每个主题在 THEME_VOICE_MAP 匹配了合适的音色：男声沉稳用于职场/AI 焦虑/失业类（像过来人陪伴），女声温柔用于情感疗愈类（承接情绪）。TTS 优先使用阿里 CosyVoice（自然度高），配额耗尽自动降级到免费的 edge-tts（微软语音）。"
+        ),
+        (
+            "你们怎么挣钱？",
+            "透明披露（详见关于页）：打赏（一次性小额）、联盟商品推广（睡眠相关耳塞/眼罩/白噪音机，你不会多花钱）、品牌赞助位（出现会明确标注）、未来的会员内容（长版/无 BGM 纯人声版）。所有变现位都不会影响内容的心理学质量。"
+        ),
+        (
+            "可以用手机听吗？会耗流量吗？",
+            "可以。音频是标准 MP3，每期 3-5MB。推荐订阅到 Apple Podcasts / Pocket Casts 等 App 并在 WiFi 下预下载，出门时离线听不耗流量。网页播放器也支持 SRT 字幕跟读。"
+        ),
+        (
+            "节目什么时候更新？",
+            "北京时间每天 07:05 自动生产并部署一期新节目。18 个主题会在配置的 cron 触发时随机选（可以把 --themes 改成固定名单做连续主题）。RSS/小宇宙/Apple Podcasts 订阅会自动推送新期。"
+        ),
+        (
+            "如何给反馈或建议？",
+            "联系邮箱见关于页。也欢迎在 GitHub 源码仓库开 issue（项目完全开源）。建议特别关注：哪个主题最帮助你入睡、哪个阶段（引入/深入/尾声）最有效——这些数据会指导后续主题设计。"
+        ),
+    ]
+
+    # FAQPage JSON-LD for Google rich results
+    faq_jsonld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": q,
+                "acceptedAnswer": {"@type": "Answer", "text": a},
+            }
+            for q, a in qa_pairs
+        ],
+    }
+
+    qa_html = "".join(
+        f'<details class="qa"><summary>{_esc(q)}</summary><p>{_esc(a)}</p></details>'
+        for q, a in qa_pairs
+    )
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>常见问题 · {_esc(PODCAST_TITLE)}</title>
+    <meta name="description" content="关于 AI 生成、心理学依据、订阅、变现、节目时长的常见问题解答。">
+    <meta name="keywords" content="助眠 常见问题,AI 生成 助眠,助眠 心理学,播客 订阅,失眠 FAQ">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="常见问题 · {_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="AI 生成可信吗？心理学依据是什么？怎么订阅？变现怎么做？">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{_esc(og_image)}">
+    <script type="application/ld+json">{json.dumps(faq_jsonld, ensure_ascii=False)}</script>
+    {analytics_head}
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.85;
+    }}
+    .wrap {{ max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }}
+    .back {{ color: var(--dim); text-decoration: none; font-size: 0.85rem; }}
+    .back:hover {{ color: var(--accent); }}
+    h1 {{
+      font-size: 1.8rem; margin: 18px 0 10px;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .lede {{ color: var(--dim); font-size: 0.95rem; margin-bottom: 32px; }}
+    .qa {{
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 0; margin-bottom: 12px;
+      transition: all 0.2s ease;
+    }}
+    .qa[open] {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.25);
+    }}
+    .qa summary {{
+      cursor: pointer; padding: 14px 18px;
+      font-size: 0.92rem; font-weight: 600;
+      list-style: none; position: relative;
+      padding-right: 44px;
+    }}
+    .qa summary::-webkit-details-marker {{ display: none; }}
+    .qa summary::after {{
+      content: '+'; position: absolute; right: 18px; top: 50%;
+      transform: translateY(-50%); color: var(--accent); font-size: 1.2rem;
+      transition: transform 0.3s ease;
+    }}
+    .qa[open] summary::after {{ transform: translateY(-50%) rotate(45deg); }}
+    .qa p {{
+      padding: 0 18px 16px; color: var(--text);
+      font-size: 0.87rem; line-height: 1.8;
+    }}
+    .footer {{
+      margin-top: 40px; padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex; flex-wrap: wrap; gap: 14px;
+      font-size: 0.82rem; color: var(--dim);
+    }}
+    .footer a {{ color: var(--dim); text-decoration: none; }}
+    .footer a:hover {{ color: var(--accent); }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="index.html">← 回到首页</a>
+        <h1>常见问题</h1>
+        <p class="lede">AI 生成的助眠音频需要回答的真实问题——透明比安慰更能建立信任。</p>
+        {qa_html}
+        <div class="footer">
+          <a href="index.html">首页</a>
+          <a href="about.html">关于</a>
+          <a href="themes.html">全部主题</a>
+          <a href="feed.xml">RSS</a>
+        </div>
+      </div>
+    </body>
+    </html>
+    """)
+
+
 def generate_about_page(monetization: dict, base_url: str) -> str:
     """Generate site/about.html — trust-building page explaining what the site is,
     the 4 theme categories, how episodes are produced, and transparent monetization.
@@ -2010,6 +2242,12 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     about_loc = f"{base}/about.html" if base else "about.html"
     urls.append(f"""  <url>
     <loc>{about_loc}</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>""")
+    faq_loc = f"{base}/faq.html" if base else "faq.html"
+    urls.append(f"""  <url>
+    <loc>{faq_loc}</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>""")
@@ -2400,6 +2638,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
           <span><b>{total_eps}</b> 期节目</span>
           <span><b>{_fmt_duration(total_dur)}</b> 总时长</span>
           <a class="stats-link" href="themes.html">主题 →</a>
+          <a class="stats-link" href="faq.html">FAQ →</a>
           <a class="stats-link" href="about.html">关于 →</a>
         </div>
       </header>
@@ -2766,6 +3005,12 @@ def main():
         generate_about_page(monetization, args.base_url), encoding="utf-8"
     )
     print(f"[OK] 关于页 → {SITE_DIR / 'about.html'}")
+
+    # generate FAQ page (FAQPage schema for rich results)
+    (SITE_DIR / "faq.html").write_text(
+        generate_faq_page(monetization, args.base_url), encoding="utf-8"
+    )
+    print(f"[OK] FAQ 页 → {SITE_DIR / 'faq.html'}")
 
     # generate per-category landing pages (SEO + UX)
     category_dir = SITE_DIR / "category"

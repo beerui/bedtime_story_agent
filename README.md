@@ -24,6 +24,7 @@ outputs/Batch_20260417_xxxx_午夜慢车/
 site/                    # 可直接部署到 GitHub Pages / Vercel / Netlify
 ├── index.html           # 首页（订阅按钮 + 分类筛选 + 节目列表 + 支持板块）
 ├── about.html           # 关于页（4 分类/生成流程/变现披露，信任建设）
+├── faq.html             # 常见问题（含 FAQPage JSON-LD，争取 Google rich results）
 ├── themes.html          # 18 主题总览 hub（4 分类分组）
 ├── theme/*.html         # 18 个主题着陆页（pain_point/technique 聚焦 + 本主题所有节目）
 ├── category/*.html      # 4 个分类着陆页（按 SEO 意图独立打关键词）

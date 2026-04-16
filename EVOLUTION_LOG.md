@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-04-17] 分享菜单 + FAQ 页（含 FAQPage schema） (publish.py)
+**动因**: 增长复利的核心是「让满意听众主动帮你分享」。单期页原来的「📤 分享」用的是 navigator.share 兜底 copyLink——在没装对应 app 的浏览器里只是复制链接，文案要听众自己写。同样 AI 内容的信任问题没专属落地页，陌生访客的常见疑虑没地方一次性打消
+**实现**:
+1. 分享菜单：`toggleShareMenu` 替代 `shareEp`，展开下拉：X / 微博 / 小红书复制长文 / 微信复制链接+文案 / 仅复制链接
+2. 每平台预填文案各异（Python 端按主题元数据生成，JSON 嵌入 HTML）：
+   - **X（Twitter）**：短句 + 标题 + pain_point 一行 + 技术 — 推 intent URL 自动打开 compose
+   - **微博**：`#助眠电台#` 话题 + 主题名 + 摘要 — share intent URL
+   - **小红书**：完整 caption（emoji + 此刻感受/使用技术/听后状态 三元信息 + 时长 + 5 个 hashtag）— 复制到剪贴板（XHS 无 web share intent）
+   - **微信**：标题+痛点+链接 — 复制（同上）
+3. 每次点击触发 `Share Episode` 埋点带 platform prop，可分析哪个平台最有传播力
+4. 菜单外点击自动关闭，Toast 提示「小红书文案已复制，去粘贴发帖」等针对性反馈
+5. 新增 `generate_faq_page`：9 个 QA 覆盖 AI 可信/心理学依据/订阅方法/时长/声音/变现/流量/更新频率/反馈途径；每个 QA 写成 `<details>/<summary>` 折叠式，` [open]` 状态加暖紫边框
+6. 注入 FAQPage JSON-LD：`@type: FAQPage, mainEntity: [{@type: Question, acceptedAnswer: {@type: Answer, text}}]`——这是 Google 在「人们还问」区显示答案卡片的结构化要求
+7. 导航全打通：首页 stats 加「FAQ →」、单期页 footer 加「FAQ」、sitemap 加 faq.html（priority 0.6）
+**验证**: 
+- 分享菜单 4 个 shareTo 触发点（x/weibo/xhs/wechat）渲染正确；AI焦虑 episode 的小红书文案完整包含 emoji + 三元心理信息 + 5 hashtag，直接可粘贴
+- FAQ 页 JSON-LD 被 `<script type="application/ld+json">` 正确包裹；9 个 `<details>` 折叠交互
+- sitemap 含 faq.html 条目
+**下一步**:
+- 小红书 / 微信的 toast 提示可以增加一个「打开微信/小红书 App」深链（iOS 有 URL scheme）
+- FAQ 页后续可以根据真实 analytics 数据更新（哪类问题从未点开说明没价值，哪个高频展开可补细节）
+- Email 订阅 form 还没加——Buttondown/Substack 需用户选服务商，下一轮可做
+
 ## [2026-04-17] 18 主题着陆页 + 主题总览 hub (publish.py)
 **动因**: 18 个主题各有完整心理学元数据（pain_point/technique/emotional_target/search_keywords），但只存在于 config.py——没有对应的可访问页面。访客搜「AI 焦虑 入睡」落到分类页太宽，真正需要的是直达 AI焦虑夜_数字排毒 主题。SEO 维度上少了 18 条长尾精准着陆机会
 **实现**:
