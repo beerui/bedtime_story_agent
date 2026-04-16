@@ -51,5 +51,12 @@
     "xiaohongshu": "",
     "bilibili": "",
     "contact_email": "hello@你的域名.com"
+  },
+  "analytics": {
+    "_comment": "三选一（或都留空不注入）。Plausible/Umami 隐私友好，GA4 功能最强但需要 cookie 条款",
+    "plausible_domain": "",
+    "umami_script_url": "",
+    "umami_website_id": "",
+    "google_analytics_id": ""
   }
 }

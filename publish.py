@@ -378,7 +378,8 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
     <meta name="twitter:title" content="{_esc(PODCAST_TITLE)}">
     <meta name="twitter:description" content="{tagline}">
     <link rel="alternate" type="application/rss+xml" title="{_esc(PODCAST_TITLE)} RSS" href="{_esc(feed_url)}">
-    <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>""")
+    <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>
+    {_build_analytics_head(m)}""")
 
 
 import re
@@ -461,7 +462,49 @@ def _episode_href(ep: dict) -> str:
     return f"episodes/{_episode_slug(ep)}.html"
 
 
-def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps: int) -> str:
+def _build_analytics_head(m: dict) -> str:
+    """Render optional analytics snippets from monetization.json.
+
+    Supports Plausible (privacy-first, recommended), Umami (self-hosted), and GA4."""
+    a = (m or {}).get("analytics") or {}
+    out: list[str] = []
+    plausible = (a.get("plausible_domain") or "").strip()
+    if plausible:
+        out.append(f'<script defer data-domain="{_esc(plausible)}" src="https://plausible.io/js/script.js"></script>')
+    umami_url = (a.get("umami_script_url") or "").strip()
+    umami_id = (a.get("umami_website_id") or "").strip()
+    if umami_url and umami_id:
+        out.append(f'<script defer src="{_esc(umami_url)}" data-website-id="{_esc(umami_id)}"></script>')
+    ga = (a.get("google_analytics_id") or "").strip()
+    if ga:
+        out.append(f'<script async src="https://www.googletagmanager.com/gtag/js?id={_esc(ga)}"></script>')
+        out.append(
+            '<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}'
+            f'gtag("js",new Date());gtag("config","{_esc(ga)}");</script>'
+        )
+    return "\n    ".join(out)
+
+
+def _related_episodes(target: dict, all_eps: list[dict], k: int = 3) -> list[dict]:
+    """Pick up to k episodes most similar to `target` by tag overlap.
+    Falls back to nearest-in-time when no tag overlap exists."""
+    target_tags = set(target.get("tags") or [])
+    target_folder = target["folder"]
+    scored: list[tuple[int, int, dict]] = []
+    for ep in all_eps:
+        if ep["folder"] == target_folder:
+            continue
+        overlap = len(target_tags & set(ep.get("tags") or []))
+        time_delta = abs((ep["timestamp"] - target["timestamp"]).total_seconds())
+        # higher overlap first, then closer in time (negative so sorts ascending)
+        scored.append((-overlap, time_delta, ep))
+    scored.sort(key=lambda t: (t[0], t[1]))
+    return [t[2] for t in scored[:k]]
+
+
+def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps: int,
+                          prev_ep: dict | None = None, next_ep: dict | None = None,
+                          related: list[dict] | None = None) -> str:
     """Standalone long-form page for one episode — optimized for SEO long-tail traffic.
 
     Contains full readable transcript, embedded audio, share buttons, and
@@ -499,6 +542,47 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     tags_html = "".join(f'<span class="tag">{_esc(t)}</span>' for t in ep["tags"][:6])
 
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
+    analytics_head = _build_analytics_head(m)
+
+    # prev/next episode navigation (keeps listeners bingeing)
+    nav_parts: list[str] = []
+    if prev_ep:
+        nav_parts.append(
+            f'<a class="ep-nav-link ep-nav-prev" href="{_esc(_episode_slug(prev_ep))}.html">'
+            f'<span class="ep-nav-dir">← 上一集</span>'
+            f'<span class="ep-nav-title">{_esc(prev_ep["title"])}</span></a>'
+        )
+    else:
+        nav_parts.append('<span class="ep-nav-link ep-nav-dummy"></span>')
+    if next_ep:
+        nav_parts.append(
+            f'<a class="ep-nav-link ep-nav-next" href="{_esc(_episode_slug(next_ep))}.html">'
+            f'<span class="ep-nav-dir">下一集 →</span>'
+            f'<span class="ep-nav-title">{_esc(next_ep["title"])}</span></a>'
+        )
+    else:
+        nav_parts.append('<span class="ep-nav-link ep-nav-dummy"></span>')
+    nav_html = f'<nav class="ep-nav">{"".join(nav_parts)}</nav>'
+
+    # related episodes (internal linking → SEO + dwell time)
+    related_html = ""
+    related = related or []
+    if related:
+        cards = []
+        for r in related:
+            r_desc_raw = (r.get("description") or r["draft_full"][:200]).strip()
+            r_desc = _STRIP_RE.sub("", r_desc_raw)
+            r_desc = re.sub(r"\s+", " ", r_desc).strip()[:80]
+            cards.append(
+                f'<a class="rel-card" href="{_esc(_episode_slug(r))}.html">'
+                f'<div class="rel-theme">{_esc(r["theme"])}</div>'
+                f'<div class="rel-title">{_esc(r["title"])}</div>'
+                f'<div class="rel-desc">{_esc(r_desc)}</div></a>'
+            )
+        related_html = (
+            '<section class="related"><h2>你可能还喜欢</h2>'
+            f'<div class="rel-grid">{"".join(cards)}</div></section>'
+        )
 
     return textwrap.dedent(f"""\
     <!DOCTYPE html>
@@ -519,6 +603,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <meta name="twitter:title" content="{_esc(ep['title'])}">
     <meta name="twitter:description" content="{_esc(desc_plain[:160])}">
     <script type="application/ld+json">{json.dumps(jsonld_ep, ensure_ascii=False)}</script>
+    {analytics_head}
     <style>
     :root {{
       --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
@@ -591,6 +676,58 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     }}
     .footer-nav a {{ color: var(--dim); text-decoration: none; }}
     .footer-nav a:hover {{ color: var(--accent); }}
+    .ep-nav {{
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      margin-top: 44px;
+    }}
+    .ep-nav-link {{
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 14px 16px; border-radius: 12px;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease; min-height: 64px;
+    }}
+    .ep-nav-link:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.28);
+      transform: translateY(-1px);
+    }}
+    .ep-nav-next {{ text-align: right; }}
+    .ep-nav-dir {{ font-size: 0.7rem; color: var(--dim); }}
+    .ep-nav-title {{ font-size: 0.88rem; font-weight: 600; line-height: 1.4;
+      overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical; }}
+    .ep-nav-dummy {{ visibility: hidden; }}
+    .related {{
+      margin-top: 48px; padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }}
+    .related h2 {{
+      font-size: 0.88rem; color: var(--text); font-weight: 600;
+      margin-bottom: 14px;
+    }}
+    .rel-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }}
+    .rel-card {{
+      display: block; padding: 14px; border-radius: 12px;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .rel-card:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.28);
+    }}
+    .rel-theme {{
+      font-size: 0.68rem; color: var(--accent);
+      background: rgba(124,111,247,0.12); display: inline-block;
+      padding: 2px 8px; border-radius: 10px; margin-bottom: 6px;
+    }}
+    .rel-title {{ font-size: 0.85rem; font-weight: 600; line-height: 1.4; margin-bottom: 4px; }}
+    .rel-desc {{ font-size: 0.72rem; color: var(--dim); line-height: 1.5; }}
     .toast {{
       position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
       background: rgba(124,111,247,0.95); color: #fff;
@@ -625,6 +762,10 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         <article class="transcript">
           {transcript_html}
         </article>
+
+        {nav_html}
+
+        {related_html}
 
         <div class="footer-nav">
           <a href="../index.html">← 所有 {total_eps} 期</a>
@@ -1196,8 +1337,17 @@ def main():
     # generate per-episode pages (for SEO long-tail traffic)
     episodes_dir = SITE_DIR / "episodes"
     episodes_dir.mkdir(exist_ok=True)
-    for ep in episodes:
-        page = generate_episode_page(ep, monetization, args.base_url, len(episodes))
+    for i, ep in enumerate(episodes):
+        # episodes list is sorted newest-first:
+        # "下一集" (newer, chronologically after this one) → earlier index
+        # "上一集" (older, chronologically before this one) → later index
+        next_ep = episodes[i - 1] if i - 1 >= 0 else None
+        prev_ep = episodes[i + 1] if i + 1 < len(episodes) else None
+        related = _related_episodes(ep, episodes, k=3)
+        page = generate_episode_page(
+            ep, monetization, args.base_url, len(episodes),
+            prev_ep=prev_ep, next_ep=next_ep, related=related,
+        )
         (episodes_dir / f"{_episode_slug(ep)}.html").write_text(page, encoding="utf-8")
     print(f"[OK] 单期页 × {len(episodes)} → {episodes_dir}")
 
