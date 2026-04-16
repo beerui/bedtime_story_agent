@@ -942,7 +942,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <body>
       <div class="wrap">
         <a class="back" href="../index.html">← 回到所有节目</a>
-        <span class="theme-badge">{_esc(ep['theme'])}</span>
+        {'<a class="theme-badge" href="../category/' + _esc(theme_cfg.get('category', '')) + '.html">' if theme_cfg.get('category') else '<span class="theme-badge">'}{_esc(ep['theme'])}{'</a>' if theme_cfg.get('category') else '</span>'}
         <h1>{_esc(ep['title'])}</h1>
         <div class="meta">{ep['timestamp'].strftime('%Y-%m-%d')} · {ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</div>
         <div class="tags">{tags_html}</div>
@@ -993,6 +993,150 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         }});
       }}
       </script>
+    </body>
+    </html>
+    """)
+
+
+def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
+                            monetization: dict, base_url: str) -> str:
+    """Landing page for a single category — targets the category's SEO keywords
+    and lists all episodes that belong to it. One more indexed page per category,
+    focused intent matching (e.g. zeitgeist_2026 page targets '裁员 焦虑' etc.)."""
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    label = cat_cfg.get("label", cat_key)
+    desc = cat_cfg.get("description", "")
+    seo_keywords = cat_cfg.get("seo_keywords", [])
+    canonical = f"{site_url}/category/{cat_key}.html" if site_url else f"category/{cat_key}.html"
+    og_image = f"{site_url}/og/home.png" if site_url else "../og/home.png"
+    analytics_head = _build_analytics_head(m)
+
+    cards: list[str] = []
+    for ep in episodes:
+        theme_cfg = _THEMES.get(ep["theme"]) or {}
+        if theme_cfg.get("category") != cat_key:
+            continue
+        tags_html = "".join(f'<span class="tag">{_esc(t)}</span>' for t in ep["tags"][:3])
+        desc_short = ep["description"][:90] + "…" if len(ep["description"]) > 90 else ep["description"]
+        pain = theme_cfg.get("pain_point", "").strip()
+        pain_html = f'<div class="card-pain">痛点：{_esc(pain)}</div>' if pain else ""
+        cards.append(f"""
+        <a class="ep-card" href="../episodes/{_esc(_episode_slug(ep))}.html">
+          <div class="ep-head">
+            <span class="ep-theme">{_esc(ep['theme'])}</span>
+            <span class="ep-meta">{_fmt_duration(ep['duration'])}</span>
+          </div>
+          <h3 class="ep-title">{_esc(ep['title'])}</h3>
+          {pain_html}
+          <p class="ep-desc">{_esc(desc_short)}</p>
+          <div class="ep-tags">{tags_html}</div>
+        </a>""")
+
+    if not cards:
+        cards.append('<p class="empty-note">此分类暂无节目——新内容将在下次生产后出现。</p>')
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{_esc(label)} · {_esc(PODCAST_TITLE)}</title>
+    <meta name="description" content="{_esc(desc[:160])}">
+    <meta name="keywords" content="{_esc(','.join(seo_keywords + ['助眠', '睡眠', '冥想']))}">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{_esc(label)} · {_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="{_esc(desc[:160])}">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{_esc(og_image)}">
+    {analytics_head}
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.75;
+    }}
+    .wrap {{ max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }}
+    .back {{ color: var(--dim); text-decoration: none; font-size: 0.85rem; }}
+    .back:hover {{ color: var(--accent); }}
+    header {{ margin: 24px 0 36px; }}
+    h1 {{
+      font-size: 1.6rem; margin-bottom: 10px;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .cat-desc {{ color: var(--dim); font-size: 0.95rem; }}
+    .ep-card {{
+      display: block; padding: 18px 20px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; margin-bottom: 12px;
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .ep-card:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.28);
+      transform: translateY(-1px);
+    }}
+    .ep-head {{ display: flex; justify-content: space-between; margin-bottom: 6px; }}
+    .ep-theme {{
+      font-size: 0.72rem; color: var(--accent);
+      background: rgba(124,111,247,0.12);
+      padding: 2px 10px; border-radius: 12px;
+    }}
+    .ep-meta {{ font-size: 0.72rem; color: var(--dim); }}
+    .ep-title {{ font-size: 1rem; font-weight: 600; line-height: 1.5; margin-bottom: 6px; }}
+    .card-pain {{
+      font-size: 0.78rem; color: var(--warm);
+      margin-bottom: 6px; line-height: 1.5;
+    }}
+    .ep-desc {{ font-size: 0.85rem; color: var(--dim); margin-bottom: 8px; line-height: 1.65; }}
+    .ep-tags {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+    .tag {{
+      font-size: 0.7rem; color: var(--dim);
+      background: rgba(255,255,255,0.05);
+      padding: 2px 8px; border-radius: 10px;
+    }}
+    .empty-note {{
+      color: var(--dim); text-align: center; padding: 40px 20px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px;
+    }}
+    .footer {{
+      margin-top: 40px; padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      font-size: 0.82rem; color: var(--dim);
+    }}
+    .footer a {{ color: var(--dim); text-decoration: none; }}
+    .footer a:hover {{ color: var(--accent); }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="../index.html">← 回到首页</a>
+        <header>
+          <h1>{_esc(label)}</h1>
+          <p class="cat-desc">{_esc(desc)}</p>
+        </header>
+        <main>
+          {''.join(cards)}
+        </main>
+        <div class="footer">
+          <a href="../index.html">全部节目</a>
+          <a href="../about.html">关于</a>
+          <a href="../feed.xml">RSS</a>
+        </div>
+      </div>
     </body>
     </html>
     """)
@@ -1209,6 +1353,19 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>""")
+    # category landing pages — only include categories that actually have episodes
+    cat_keys_used: set[str] = set()
+    for ep in episodes:
+        k = (_THEMES.get(ep["theme"]) or {}).get("category")
+        if k:
+            cat_keys_used.add(k)
+    for ck in cat_keys_used:
+        cloc = f"{base}/category/{ck}.html" if base else f"category/{ck}.html"
+        urls.append(f"""  <url>
+    <loc>{cloc}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>""")
     about_loc = f"{base}/about.html" if base else "about.html"
     urls.append(f"""  <url>
     <loc>{about_loc}</loc>
@@ -1244,9 +1401,10 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         srt_attr = f' data-srt="{ep["srt"][:3000]}"' if ep["srt"] else ""
         audio_src = resolve_html_audio(ep)
         ep_href = _episode_href(ep)
+        cat_attr = (_THEMES.get(ep["theme"]) or {}).get("category", "")
 
         episode_cards.append(f"""
-      <article class="episode" data-audio="{audio_src}"{srt_attr}>
+      <article class="episode" data-audio="{audio_src}" data-cat="{cat_attr}"{srt_attr}>
         <div class="ep-header">
           <span class="ep-theme">{ep['theme']}</span>
           <span class="ep-meta">{ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</span>
@@ -1269,6 +1427,29 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
     site_url = (base_url or (monetization or {}).get("site_url") or "").rstrip("/")
     absolute_feed = f"{site_url}/feed.xml" if site_url else "feed.xml"
     subscribe_html = _build_subscribe_html(monetization or {}, absolute_feed)
+
+    # Category filter chips — only render when a category has at least 1 episode
+    cat_counts: dict[str, int] = {}
+    for ep in episodes:
+        key = (_THEMES.get(ep["theme"]) or {}).get("category") or ""
+        if key:
+            cat_counts[key] = cat_counts.get(key, 0) + 1
+    filter_chips_html = ""
+    if cat_counts and _THEME_CATEGORIES:
+        chips = [f'<button class="chip chip-all active" data-cat="">全部 <span class="chip-num">{total_eps}</span></button>']
+        for cat_key, cat_cfg in _THEME_CATEGORIES.items():
+            n = cat_counts.get(cat_key, 0)
+            if n == 0:
+                continue
+            label = cat_cfg.get("label", cat_key)
+            chips.append(
+                f'<button class="chip" data-cat="{_esc(cat_key)}" data-track="Filter Category" '
+                f'data-prop-cat="{_esc(cat_key)}">'
+                f'{_esc(label)} <a class="chip-deep" href="category/{_esc(cat_key)}.html" '
+                f'onclick="event.stopPropagation()">→</a> '
+                f'<span class="chip-num">{n}</span></button>'
+            )
+        filter_chips_html = f'<nav class="filter-chips" role="tablist">{"".join(chips)}</nav>'
 
     return textwrap.dedent(f"""\
     <!DOCTYPE html>
@@ -1474,6 +1655,36 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
       margin-top: 10px; line-height: 1.5;
     }}
 
+    /* --- category filter chips --- */
+    .filter-chips {{
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 24px;
+    }}
+    .chip {{
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 18px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-dim); font-size: 0.8rem; font-family: inherit;
+      cursor: pointer; transition: all 0.2s ease;
+    }}
+    .chip:hover {{ border-color: rgba(124,111,247,0.3); color: var(--text); }}
+    .chip.active {{
+      background: rgba(124,111,247,0.15); color: var(--accent);
+      border-color: rgba(124,111,247,0.4);
+    }}
+    .chip-num {{
+      font-size: 0.68rem; opacity: 0.7;
+      background: rgba(255,255,255,0.05);
+      padding: 1px 6px; border-radius: 10px; min-width: 22px; text-align: center;
+    }}
+    .chip-deep {{
+      color: inherit; text-decoration: none;
+      font-size: 0.85rem; opacity: 0.55;
+      margin-left: -2px;
+    }}
+    .chip-deep:hover {{ opacity: 1; }}
+    .episode.hide-by-filter {{ display: none; }}
+
     /* --- support / monetization --- */
     .support, .affiliates {{
       margin-top: 48px;
@@ -1553,6 +1764,8 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
 
       {subscribe_html}
 
+      {filter_chips_html}
+
       <main id="episodes">
         {cards_html}
       </main>
@@ -1627,6 +1840,25 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         }}, 1600);
       }}).catch(() => {{ alert('请手动复制: ' + url); }});
     }}
+
+    // --- Category filter chips ---
+    (function() {{
+      const chips = document.querySelectorAll('.filter-chips .chip');
+      const eps = document.querySelectorAll('.episode');
+      if (!chips.length || !eps.length) return;
+      chips.forEach(chip => {{
+        chip.addEventListener('click', (e) => {{
+          // the inner <a class="chip-deep"> has stopPropagation; clicks here mean chip body
+          if (e.target.closest('.chip-deep')) return;
+          const cat = chip.dataset.cat;
+          chips.forEach(c => c.classList.toggle('active', c === chip));
+          eps.forEach(ep => {{
+            const match = !cat || ep.dataset.cat === cat;
+            ep.classList.toggle('hide-by-filter', !match);
+          }});
+        }});
+      }});
+    }})();
 
     // --- Starfield ---
     (function() {{
@@ -1892,6 +2124,25 @@ def main():
         generate_about_page(monetization, args.base_url), encoding="utf-8"
     )
     print(f"[OK] 关于页 → {SITE_DIR / 'about.html'}")
+
+    # generate per-category landing pages (SEO + UX)
+    category_dir = SITE_DIR / "category"
+    category_dir.mkdir(exist_ok=True)
+    cat_generated = 0
+    used_cats: set[str] = set()
+    for ep in episodes:
+        k = (_THEMES.get(ep["theme"]) or {}).get("category")
+        if k:
+            used_cats.add(k)
+    for cat_key in used_cats:
+        cat_cfg = (_THEME_CATEGORIES or {}).get(cat_key)
+        if not cat_cfg:
+            continue
+        page = generate_category_page(cat_key, cat_cfg, episodes, monetization, args.base_url)
+        (category_dir / f"{cat_key}.html").write_text(page, encoding="utf-8")
+        cat_generated += 1
+    if cat_generated:
+        print(f"[OK] 分类页 × {cat_generated} → {category_dir}")
 
     # generate RSS feed
     rss = generate_rss(episodes, args.base_url)

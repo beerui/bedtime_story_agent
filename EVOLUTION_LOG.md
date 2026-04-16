@@ -4,6 +4,22 @@
 
 ---
 
+## [2026-04-17] 分类着陆页 + 首页筛选 chips (publish.py + README)
+**动因**: 22 期内容就位后暴露两个问题：（a）首页一屏 22 张卡片堆在一起，用户来时带着具体意图（"我要的是裁员焦虑"），滚动找很烦；（b）搜索引擎只有 index+episodes+about 几类页，category.seo_keywords（裁员焦虑/ACT/职场共鸣/自然解压）定义了但无落地页承载，SEO 资产浪费
+**实现**:
+1. `generate_category_page(cat_key, cat_cfg, episodes, monetization, base_url)`：为每个分类生成独立 HTML，canonical + keywords 用 `category.seo_keywords`，OG 用 home.png，列出本类所有节目卡片（含 pain_point 前置显示）
+2. `main()` 收集有节目的分类，写 `site/category/{key}.html`；0 期的分类不生成
+3. 单期页的 `<span class="theme-badge">` 若主题有 category 则改成 `<a class="theme-badge" href="../category/{cat}.html">`——每张单期页都有反向链接到所属分类页，内部链接网加密
+4. sitemap.xml 新增 4 个分类页条目（priority 0.7，changefreq weekly）
+5. 首页 header 下订阅区之间加 `<nav class="filter-chips">`：全部/4 分类的 chip 横向排列，每个 chip 标注当期数；纯客户端 JS（`classList.toggle('hide-by-filter')`），无页面刷新；chip 右侧小 → 链接跳转到该分类的独立着陆页（聚焦 SEO）；点击 chip 触发 `Filter Category` 自定义埋点
+6. episode 卡片新加 `data-cat="{category_key}"` 属性供 JS 过滤使用
+7. README 站点结构补 `category/*.html`
+**验证**: `python3 publish.py --copy-audio --base-url ...` 产出 `[OK] 分类页 × 4`；sitemap 含 4 条 category URL；单期页 theme-badge 正确渲染为 `<a href="../category/zeitgeist_2026.html">`；category 页 SEO 关键词为「裁员 焦虑,AI 焦虑,催婚 压力,父母 健康,失恋 助眠,助眠,睡眠,冥想」
+**下一步**:
+- 每个主题 18 个可以各自再出一个主题页（18 页额外索引），但收益递减——分类页已承载核心 SEO 意图
+- 首页筛选 chip 可加记忆：URL `#cat=zeitgeist_2026` 直接激活对应分类，方便分享
+- 分类页可加小工具：该分类专属的「随机播一期」按钮
+
 ## [2026-04-17] 信任建设：About 页 + 单期页临床技术徽章 (publish.py + README)
 **动因**: 用户截图显示站点成功部署但停在占位页（batch 没产出），也暴露出更大问题——即使有内容，AI 生成类站点缺「凭什么信任」的落地页。陌生访客看到 3 秒内不知道：是谁做的？怎么做的？是瞎编还是有心理学基础？不解决信任，订阅/打赏/联盟都转化不动
 **实现**:
