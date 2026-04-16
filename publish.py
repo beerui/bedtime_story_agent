@@ -2214,6 +2214,274 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     """)
 
 
+def generate_stats_page(episodes: list[dict], monetization: dict, base_url: str) -> str:
+    """Public content-library stats page — transparency signal + SEO freshness.
+
+    Reads episodes + THEMES, computes per-category counts, per-theme counts,
+    total runtime, most-recent publish date, gaps (themes with 0 episodes).
+    Pure HTML/CSS bars, no JS libraries."""
+    import datetime as _dt
+    m = monetization or {}
+    site_url = (base_url or m.get("site_url") or "").rstrip("/")
+    canonical = f"{site_url}/stats.html" if site_url else "stats.html"
+    og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
+    analytics_head = _build_analytics_head(m)
+
+    breadcrumb_jsonld = _breadcrumb_jsonld([
+        ("助眠电台", f"{site_url}/" if site_url else "index.html"),
+        ("数据", ""),
+    ])
+
+    total_eps = len(episodes)
+    total_sec = sum(e.get("duration", 0) for e in episodes)
+    total_hours = total_sec / 3600
+    total_words = sum(e.get("word_count", 0) for e in episodes)
+
+    # Category breakdown
+    cat_counts: dict[str, int] = {}
+    for ep in episodes:
+        k = (_THEMES.get(ep["theme"]) or {}).get("category") or "其他"
+        cat_counts[k] = cat_counts.get(k, 0) + 1
+
+    # Theme coverage (present vs configured)
+    configured_themes = set((_THEMES or {}).keys())
+    produced_themes = {ep["theme"] for ep in episodes}
+    missing_themes = sorted(configured_themes - produced_themes)
+
+    # Theme counts — sorted descending
+    theme_counts: dict[str, int] = {}
+    for ep in episodes:
+        theme_counts[ep["theme"]] = theme_counts.get(ep["theme"], 0) + 1
+    theme_top = sorted(theme_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # Freshness
+    latest = max((e["timestamp"] for e in episodes), default=None)
+    latest_str = latest.strftime("%Y-%m-%d %H:%M") if latest else "—"
+    days_since = (_dt.datetime.now() - latest).days if latest else None
+
+    # Weekly cadence — last 8 weeks
+    weeks: dict[str, int] = {}
+    if episodes:
+        for ep in episodes:
+            iso_year, iso_week, _ = ep["timestamp"].isocalendar()
+            key = f"{iso_year}-W{iso_week:02d}"
+            weeks[key] = weeks.get(key, 0) + 1
+    recent_weeks = sorted(weeks.items())[-8:]
+
+    # Category section HTML
+    max_cat = max(cat_counts.values()) if cat_counts else 1
+    cat_rows: list[str] = []
+    for cat_key, cat_cfg in (_THEME_CATEGORIES or {}).items():
+        n = cat_counts.get(cat_key, 0)
+        width_pct = (n / max_cat) * 100 if max_cat else 0
+        label = cat_cfg.get("label", cat_key)
+        cat_rows.append(
+            f'<div class="row"><span class="row-label"><a href="category/{_esc(cat_key)}.html">{_esc(label)}</a></span>'
+            f'<div class="bar-track"><div class="bar" style="width:{width_pct:.1f}%">{n}</div></div></div>'
+        )
+
+    # Top themes
+    max_theme = theme_top[0][1] if theme_top else 1
+    theme_rows: list[str] = []
+    for name, n in theme_top[:10]:
+        width_pct = (n / max_theme) * 100 if max_theme else 0
+        theme_rows.append(
+            f'<div class="row"><span class="row-label"><a href="theme/{_esc(name)}.html">{_esc(name)}</a></span>'
+            f'<div class="bar-track"><div class="bar bar-theme" style="width:{width_pct:.1f}%">{n}</div></div></div>'
+        )
+
+    # Weekly activity
+    max_week = max((n for _, n in recent_weeks), default=1) or 1
+    week_rows: list[str] = []
+    for label, n in recent_weeks:
+        h_pct = (n / max_week) * 100
+        week_rows.append(
+            f'<div class="week-col"><div class="week-bar" style="height:{h_pct:.0f}%" title="{n} 期"></div>'
+            f'<div class="week-label">{_esc(label[-3:])}</div></div>'
+        )
+
+    # Missing themes
+    missing_html = ""
+    if missing_themes:
+        missing_chips = "".join(
+            f'<a class="missing-theme" href="theme/{_esc(t)}.html">{_esc(t)}</a>'
+            for t in missing_themes
+        )
+        missing_html = (
+            '<section><h2>暂无节目的主题</h2>'
+            '<p class="tip">这些主题配置了完整心理学锚点，等待后续生产——主题页已提前就位以便种 SEO 长尾。</p>'
+            f'<div class="missing-grid">{missing_chips}</div></section>'
+        )
+
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据 · {_esc(PODCAST_TITLE)}</title>
+    <meta name="description" content="助眠电台的内容库公开数据：{total_eps} 期节目、{total_hours:.1f} 小时总时长、4 分类覆盖度、生产节奏。">
+    <meta name="keywords" content="助眠电台 数据,助眠 内容库,节目统计,播客统计">
+    <link rel="canonical" href="{_esc(canonical)}">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="数据 · {_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="{total_eps} 期节目 · {total_hours:.1f} 小时 · 4 分类">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{_esc(og_image)}">
+    {breadcrumb_jsonld}
+    {analytics_head}
+    <style>
+    :root {{
+      --bg: #06061a; --text: #d4d4e0; --dim: #7a7a9a;
+      --accent: #7c6ff7; --warm: #f0c27f;
+      --card: rgba(255,255,255,0.04); --border: rgba(255,255,255,0.08);
+    }}
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; line-height: 1.75;
+    }}
+    .wrap {{ max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }}
+    .back {{ color: var(--dim); text-decoration: none; font-size: 0.85rem; }}
+    .back:hover {{ color: var(--accent); }}
+    h1 {{
+      font-size: 1.8rem; margin: 18px 0 10px;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }}
+    .lede {{ color: var(--dim); font-size: 0.95rem; margin-bottom: 32px; }}
+    .big-numbers {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px; margin-bottom: 36px;
+    }}
+    .big-card {{
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 18px 20px;
+    }}
+    .big-val {{
+      font-size: 1.8rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--warm), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      font-variant-numeric: tabular-nums;
+    }}
+    .big-label {{ font-size: 0.74rem; color: var(--dim); margin-top: 2px; }}
+    h2 {{
+      font-size: 1.05rem; font-weight: 600;
+      margin: 32px 0 14px;
+      border-left: 3px solid var(--accent); padding-left: 10px;
+    }}
+    .row {{
+      display: grid; grid-template-columns: 140px 1fr; gap: 12px;
+      align-items: center; margin-bottom: 8px;
+    }}
+    .row-label {{ font-size: 0.84rem; }}
+    .row-label a {{ color: var(--text); text-decoration: none; }}
+    .row-label a:hover {{ color: var(--accent); }}
+    .bar-track {{
+      background: rgba(255,255,255,0.03); height: 24px; border-radius: 6px;
+      overflow: hidden; position: relative;
+    }}
+    .bar {{
+      height: 100%; background: linear-gradient(90deg, var(--accent), #9b6ff7);
+      padding-right: 8px; color: #fff; font-size: 0.72rem;
+      display: flex; align-items: center; justify-content: flex-end;
+      min-width: 28px; transition: width 0.4s ease;
+    }}
+    .bar-theme {{ background: linear-gradient(90deg, var(--warm), #e3a45a); color: #06061a; }}
+    .weeks {{
+      display: flex; gap: 10px; align-items: flex-end;
+      height: 120px; padding: 10px 0; margin-bottom: 12px;
+    }}
+    .week-col {{ flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }}
+    .week-bar {{
+      width: 100%; max-width: 32px; min-height: 2px;
+      background: linear-gradient(to top, var(--accent), var(--warm));
+      border-radius: 4px 4px 0 0;
+    }}
+    .week-label {{
+      font-size: 0.66rem; color: var(--dim);
+      font-family: ui-monospace, Menlo, monospace;
+    }}
+    .tip {{ color: var(--dim); font-size: 0.82rem; margin-bottom: 12px; }}
+    .missing-grid {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .missing-theme {{
+      font-size: 0.76rem; color: var(--dim);
+      background: var(--card); border: 1px dashed var(--border);
+      padding: 4px 10px; border-radius: 14px;
+      text-decoration: none;
+    }}
+    .missing-theme:hover {{ color: var(--accent); border-color: var(--accent); }}
+    .fresh {{
+      font-size: 0.88rem; color: var(--text);
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 16px;
+    }}
+    .fresh strong {{ color: var(--warm); }}
+    .footer {{
+      margin-top: 40px; padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex; flex-wrap: wrap; gap: 14px;
+      font-size: 0.82rem; color: var(--dim);
+    }}
+    .footer a {{ color: var(--dim); text-decoration: none; }}
+    .footer a:hover {{ color: var(--accent); }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <a class="back" href="index.html">← 回到首页</a>
+        <h1>内容库数据</h1>
+        <p class="lede">透明比宣传更可信——下面是这个电台完整的内容库公开快照。</p>
+
+        <div class="big-numbers">
+          <div class="big-card"><div class="big-val">{total_eps}</div><div class="big-label">期节目</div></div>
+          <div class="big-card"><div class="big-val">{total_hours:.1f}</div><div class="big-label">小时总时长</div></div>
+          <div class="big-card"><div class="big-val">{total_words:,}</div><div class="big-label">字累计剧本</div></div>
+          <div class="big-card"><div class="big-val">{len(produced_themes)}/{len(configured_themes)}</div><div class="big-label">主题已产出</div></div>
+        </div>
+
+        <section>
+          <h2>分类覆盖</h2>
+          {''.join(cat_rows)}
+        </section>
+
+        <section>
+          <h2>主题热度 Top 10</h2>
+          {''.join(theme_rows)}
+        </section>
+
+        <section>
+          <h2>最近 8 周生产节奏</h2>
+          <div class="weeks">{''.join(week_rows) or '<p class="tip">还没足够数据——至少要跑 1 周才能看趋势。</p>'}</div>
+        </section>
+
+        <section>
+          <h2>最新一期</h2>
+          <p class="fresh">
+            <strong>{_esc(latest_str)}</strong>
+            {f' · 距今 {days_since} 天' if days_since is not None else ''}
+            {' · 新鲜' if days_since is not None and days_since <= 2 else (' · 该更新了' if days_since is not None and days_since >= 7 else '')}
+          </p>
+        </section>
+
+        {missing_html}
+
+        <div class="footer">
+          <a href="index.html">首页</a>
+          <a href="about.html">关于</a>
+          <a href="themes.html">全部主题</a>
+          <a href="faq.html">FAQ</a>
+          <a href="episodes.json">episodes.json</a>
+          <a href="feed.xml">RSS</a>
+        </div>
+      </div>
+    </body>
+    </html>
+    """)
+
+
 def generate_faq_page(monetization: dict, base_url: str) -> str:
     """FAQ page with inline FAQPage JSON-LD — eligible for Google rich snippets.
 
@@ -2660,6 +2928,12 @@ def generate_sitemap(episodes: list[dict], base_url: str) -> str:
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>""")
+    stats_loc = f"{base}/stats.html" if base else "stats.html"
+    urls.append(f"""  <url>
+    <loc>{stats_loc}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.5</priority>
+  </url>""")
     body = "\n".join(urls)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -3089,6 +3363,7 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
           <span><b>{total_eps}</b> 期节目</span>
           <span><b>{_fmt_duration(total_dur)}</b> 总时长</span>
           <a class="stats-link" href="themes.html">主题 →</a>
+          <a class="stats-link" href="stats.html">数据 →</a>
           <a class="stats-link" href="faq.html">FAQ →</a>
           <a class="stats-link" href="about.html">关于 →</a>
         </div>
@@ -3514,6 +3789,12 @@ def main():
         generate_faq_page(monetization, args.base_url), encoding="utf-8"
     )
     print(f"[OK] FAQ 页 → {SITE_DIR / 'faq.html'}")
+
+    # generate stats page (public content-library dashboard)
+    (SITE_DIR / "stats.html").write_text(
+        generate_stats_page(episodes, monetization, args.base_url), encoding="utf-8"
+    )
+    print(f"[OK] 数据页 → {SITE_DIR / 'stats.html'}")
 
     # generate per-category landing pages (SEO + UX)
     category_dir = SITE_DIR / "category"
