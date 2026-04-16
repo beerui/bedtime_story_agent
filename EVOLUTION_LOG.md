@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-04-17] OG 社交分享封面 (covers.py + publish.py)
+**动因**: 订阅按钮解决了「访客到粉丝」的转化，但没解决「粉丝到新访客」的增长——分享到微信/小红书/X 时卡片无图，CTR 低 5 倍
+**实现**:
+1. 新增 `covers.py`：Pillow 渲染 1200x630 PNG。背景用站点紫金渐变 + 径向压暗中心；星点装饰；folder 名哈希种子让每期色相 ±30° 漂移保证视觉不重复；字体自动探测 macOS `STHeiti Medium.ttc` / PingFang / Noto CJK / 文泉驿
+2. 组件：主题徽章（左上暖金 pill）+ 两行标题（自动换行 + 超长截断）+ 可选副标题（描述节选）+ 品牌页脚（左下）+ 右下装饰弧光
+3. 优雅降级：Pillow 未安装时 `available()` 返回 False，publish.py 跳过封面生成但继续产出其他所有文件
+4. `publish.py` 集成：`main()` 里调用 `_covers.generate_home_cover()` + `generate_episode_cover(ep, ...)`，输出到 `site/og/`；已存在的封面文件跳过（幂等 + 节省 CPU）
+5. 首页 head 注入 `og:image` + `og:image:width/height` + `twitter:image`（summary_large_image），单期页同样注入 + canonical URL 对应 `og/{folder}.png`
+**验证**: 4 张封面（3 期 + 1 首页）共 471KB；每页 4 处 og/twitter image meta；smoke test `python3 covers.py /tmp/og_test.png` 无报错
+**下一步**:
+- GitHub Actions 里要 `apt-get install fonts-wqy-microhei` 才能渲中文
+- 封面目前是纯设计，可以考虑把场景图（若 --no-audio-only 产出了 scene_1.png）作为背景，AI 绘的图比渐变更抓眼球
+- 长尾优化：封面加小字版「期数 / 日期」让老粉丝一眼区分不同期
+
 ## [2026-04-17] 订阅转化漏斗：首页订阅按钮组 (publish.py)
 **动因**: 前 3 轮让站点可部署、有 SEO、有单期页、有相关推荐，但访客看完一期后**没有地方订阅**——RSS 只在 `<link rel="alternate">` 里（普通人不知道怎么用）。用户每次要主动搜索才能回来，长尾留存直接断掉
 **实现**:

@@ -25,6 +25,11 @@ import xml.etree.ElementTree as ET
 from email.utils import formatdate
 from pathlib import Path
 
+try:
+    import covers as _covers
+except Exception:
+    _covers = None
+
 ROOT_DIR = Path(__file__).parent
 OUTPUTS_DIR = ROOT_DIR / "outputs"
 SITE_DIR = ROOT_DIR / "site"
@@ -405,11 +410,12 @@ def _build_support_html(m: dict) -> str:
     return tiles_section + aff_html
 
 
-def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
+def _build_head_meta(episodes: list[dict], m: dict, base_url: str, cover_rel: str = "og/home.png") -> str:
     site_url = (base_url or (m or {}).get("site_url") or "").rstrip("/")
     tagline = _esc(m.get("brand_tagline") or PODCAST_DESC)
     og_url = site_url or ""
     feed_url = f"{site_url}/feed.xml" if site_url else "feed.xml"
+    og_image = f"{site_url}/{cover_rel}" if site_url else cover_rel
 
     jsonld = {
         "@context": "https://schema.org",
@@ -422,6 +428,7 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
     }
     if site_url:
         jsonld["url"] = site_url
+        jsonld["image"] = og_image
     if episodes:
         jsonld["numberOfEpisodes"] = len(episodes)
 
@@ -434,10 +441,14 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
     <meta property="og:description" content="{tagline}">
     <meta property="og:site_name" content="{_esc(PODCAST_TITLE)}">
     <meta property="og:locale" content="zh_CN">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     {'<meta property="og:url" content="' + _esc(og_url) + '">' if og_url else ''}
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{_esc(PODCAST_TITLE)}">
     <meta name="twitter:description" content="{tagline}">
+    <meta name="twitter:image" content="{_esc(og_image)}">
     <link rel="alternate" type="application/rss+xml" title="{_esc(PODCAST_TITLE)} RSS" href="{_esc(feed_url)}">
     <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>
     {_build_analytics_head(m)}""")
@@ -578,6 +589,9 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     # audio path: episode pages live in site/episodes/, audio in site/audio/ → ../audio/
     audio_src = f"../audio/{ep['folder']}.mp3" if ep.get("site_audio") else f"../../{ep['audio_path']}"
     audio_abs = f"{site_url}/audio/{ep['folder']}.mp3" if site_url and ep.get("site_audio") else ""
+    # OG cover: per-episode PNG in site/og/; from episodes/*.html it's ../og/
+    cover_rel = f"og/{ep['folder']}.png"
+    og_image = f"{site_url}/{cover_rel}" if site_url else f"../{cover_rel}"
 
     desc_plain = ep["description"] or (ep["draft_full"][:140] + "…" if len(ep["draft_full"]) > 140 else ep["draft_full"])
     desc_plain = _STRIP_RE.sub("", desc_plain).strip()
@@ -659,10 +673,14 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <meta property="og:title" content="{_esc(ep['title'])}">
     <meta property="og:description" content="{_esc(desc_plain[:160])}">
     <meta property="og:locale" content="zh_CN">
+    <meta property="og:image" content="{_esc(og_image)}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     {'<meta property="og:url" content="' + _esc(canonical) + '">' if site_url else ''}
-    <meta name="twitter:card" content="summary">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{_esc(ep['title'])}">
     <meta name="twitter:description" content="{_esc(desc_plain[:160])}">
+    <meta name="twitter:image" content="{_esc(og_image)}">
     <script type="application/ld+json">{json.dumps(jsonld_ep, ensure_ascii=False)}</script>
     {analytics_head}
     <style>
@@ -1469,6 +1487,25 @@ def main():
         )
         (episodes_dir / f"{_episode_slug(ep)}.html").write_text(page, encoding="utf-8")
     print(f"[OK] 单期页 × {len(episodes)} → {episodes_dir}")
+
+    # generate OG cover images (social share cards) — skip if Pillow unavailable
+    if _covers and _covers.available():
+        og_dir = SITE_DIR / "og"
+        og_dir.mkdir(exist_ok=True)
+        generated = 0
+        home_cover = og_dir / "home.png"
+        if not home_cover.is_file():
+            if _covers.generate_home_cover(home_cover, tagline=(monetization or {}).get("brand_tagline") or "每晚 10 分钟，被温柔的声音带入梦境"):
+                generated += 1
+        for ep in episodes:
+            out = og_dir / f"{ep['folder']}.png"
+            if out.is_file():
+                continue  # covers are immutable per folder name, no regen needed
+            if _covers.generate_episode_cover(ep, out):
+                generated += 1
+        print(f"[OK] OG 封面 → {og_dir}（新生成 {generated} 张，共 {len(episodes) + 1} 张）")
+    else:
+        print("[skip] OG 封面未生成（Pillow 未安装；pip install Pillow 启用）")
 
     # generate sitemap.xml + robots.txt so search engines can crawl everything
     (SITE_DIR / "sitemap.xml").write_text(generate_sitemap(episodes, args.base_url), encoding="utf-8")
