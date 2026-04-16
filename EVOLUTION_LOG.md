@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-04-17] Makefile：10+ 辅助脚本收敛为 `make xxx` (Makefile + README)
+**动因**: 38 轮迭代累积了 10+ 个独立脚本（batch/publish/validate/doctor/launch + 3 个 backfill_ + seed_content.sh + deploy.sh）。用户面对 repo 根目录一堆脚本不知道该按什么顺序跑。需要一个权威的"命令索引"
+**实现**: 
+1. `Makefile` 提供 17 个 target，分 5 组：
+   - 诊断：launch / doctor / check / test
+   - 生产：produce / produce-one（含 THEME 参数）
+   - 站点：site / site-preview
+   - 回填：backfill-titles / backfill-loudness / backfill-scenes / backfill-all
+   - 部署：deploy-content / deploy-gh-pages
+   - 清理：clean / clean-site
+2. `make help` 自动从 target `## 说明` 注释提取菜单（awk 一行解析）
+3. BASE_URL 从 Makefile 变量统一控制，可以 `make site BASE_URL=https://xxx`
+4. produce-one 支持 `THEME=xxx` 参数
+5. clean 清 __pycache__ 和 .pyc，不碰 outputs/（对用户安全）
+6. README 快速上线章节升级：`python3 launch.py` → `make launch`，再加 5 行常用 make 命令 cheatsheet
+**验证**: `make help` 渲染清晰；`make test` → 52 pass；`make check` → validate + doctor 串联通过
+**价值**: 
+- 新用户不用读代码看文件名，一条 `make help` 就知道能做什么
+- CI 和开发者都用同一套命令，避免"跑脚本参数不对"的问题
+- 命令分组让整个工作流一目了然：诊断 → 生产 → 生成 → 回填 → 部署
+
 ## [2026-04-17] Image Sitemap：Google Images 抓取 66 张封面 (publish.py)
 **动因**: 我们产了 22 张 OG 横图（1200x630）+ 22 张方形 cover（1400x1400）+ 22 张 hero 场景图（1024x1792）——三种比例各司其职。但 sitemap.xml 只列 HTML URL，Google Images 爬虫找不到这些图。Google Images 是视觉搜索入口，也是外链流量源，暴露出来是零成本 SEO 升级
 **实现**: 

@@ -7,10 +7,20 @@
 ## 🚀 快速上线
 
 ```bash
-python3 launch.py
+make launch          # 诊断当前状态，告诉你下一步做什么
 ```
 
-这条命令会一步到位告诉你当前卡在哪、下一步具体去哪点。每项检查输出 🟢/🟡/🔴 + 对应的 URL 或命令。不会自动执行破坏性操作——只做诊断和引导。
+这条命令一步到位告诉你当前卡在哪、下一步具体去哪点。每项检查输出 🟢/🟡/🔴 + 对应的 URL 或命令。不会自动执行破坏性操作——只做诊断和引导。
+
+**常用命令**（`make help` 看全部）：
+
+```bash
+make produce         # 随机生产 3 期新内容（需 DASHSCOPE_API_KEY）
+make site-preview    # 生成站点并本机 :8888 预览
+make check           # 跑 52 个测试 + 管线校验 + 全站诊断
+make deploy-content  # 推 outputs/ 到 content 分支给 Actions 消费
+make backfill-all    # 为已有期补齐章节标题/响度归一/场景图
+```
 
 完整流程详见 [docs/GITHUB_ACTIONS_SETUP.md](docs/GITHUB_ACTIONS_SETUP.md)。要提交到 Apple Podcasts / 小宇宙 / Spotify 等平台，见 [docs/SUBMIT_PODCAST.md](docs/SUBMIT_PODCAST.md)。
 
