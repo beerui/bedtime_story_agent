@@ -4,6 +4,21 @@
 
 ---
 
+## [2026-04-17] GitHub Actions 自动化生产+部署 (.github/workflows/daily.yml + docs)
+**动因**: 用户明确选择走 Actions 路（而非 gh-pages 分支）——内容复利需要每日稳定产出，本机部署依赖我开机不现实
+**实现**:
+1. 新增 `.github/workflows/daily.yml`——三触发：cron（北京 07:05 每日）、workflow_dispatch（手动，可跳过生成）、push 到 main（只改模板时秒速重建）
+2. **`content` 分支持久化 outputs/**：Actions 运行器无状态，每次跑完环境消失；用 `content` 分支持久化累积的 Batch_/ 目录。流程：checkout content → 恢复 outputs/ → batch.py 添新一期 → rsync 回 content → git push
+3. 首次运行兼容：`checkout content` 用 `continue-on-error: true`；下一步脚本判断 `[ -d content-branch/outputs ]`，无则跳过
+4. CI 环境依赖：`apt-get install fonts-wqy-microhei fonts-wqy-zenhei ffmpeg`——封面用文泉驿微米黑（覆盖 Pillow 字体探测链末端），音频处理用 ffmpeg
+5. 用 `actions/configure-pages@v4` + `upload-pages-artifact@v3` + `deploy-pages@v4`——Pages Source 必须是 "GitHub Actions" 不是 branch
+6. 新增 `docs/GITHUB_ACTIONS_SETUP.md`：完整一次性配置（Secrets、Pages Source、Workflow permissions）、运行时行为矩阵、FAQ、如何回退到分支部署
+**验证**: YAML 语法按 Actions schema 写；`inputs.skip_generation != true` 在 schedule 触发时也正确（inputs 为空时是 falsy），需要在 Actions 实际运行才能端到端验证
+**下一步**:
+- 用户需要：配 `DASHSCOPE_API_KEY` secret → Settings → Pages 选 Actions → 手动触发一次首次运行
+- workflow 第一次可能因 Pillow 的字体探测顺序不对而让封面渲染失败；若发生，需在 covers.py `FONT_CANDIDATES` 里补更准确的 Debian 路径
+- 未来可加 `failure()` 通知到飞书/企业微信；本项目已有 evolve.sh 里飞书 webhook 逻辑可复用
+
 ## [2026-04-17] OG 社交分享封面 (covers.py + publish.py)
 **动因**: 订阅按钮解决了「访客到粉丝」的转化，但没解决「粉丝到新访客」的增长——分享到微信/小红书/X 时卡片无图，CTR 低 5 倍
 **实现**:

@@ -1,0 +1,147 @@
+name: Daily episode + deploy to Pages
+
+# Three triggers:
+#   - schedule: 每天北京时间 07:05 自动产出新一期并部署
+#   - workflow_dispatch: 手动触发（可选跳过生成，只重建站点）
+#   - push 到 main: 仅代码变动时重建站点不生成新内容（快速预览模板改动）
+on:
+  schedule:
+    - cron: '5 23 * * *'  # 23:05 UTC = 07:05 Beijing next day
+  workflow_dispatch:
+    inputs:
+      skip_generation:
+        description: '跳过生成，仅重建站点'
+        type: boolean
+        default: false
+      count:
+        description: '生成时的期数'
+        default: '1'
+  push:
+    branches: [main]
+    paths:
+      - 'publish.py'
+      - 'covers.py'
+      - 'config.py'
+      - 'monetization.json'
+      - '.github/workflows/daily.yml'
+
+permissions:
+  contents: write   # push to content branch
+  pages: write      # deploy to GitHub Pages
+  id-token: write   # OIDC for Pages deploy
+
+# 同一时刻只跑一个 Pages 部署，但不取消进行中的（避免中断音频生成）
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # content 分支持久化 outputs/（首次运行不存在也不会 fail）
+      - name: Checkout content branch
+        uses: actions/checkout@v4
+        id: checkout_content
+        with:
+          ref: content
+          path: content-branch
+        continue-on-error: true
+
+      - name: Restore outputs/ from content branch
+        run: |
+          if [ -d content-branch/outputs ]; then
+            cp -r content-branch/outputs ./outputs
+            echo "Restored $(ls outputs | wc -l) episode folders"
+          else
+            echo "Content branch empty or absent — first run"
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system deps (Chinese fonts + ffmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-wqy-microhei fonts-wqy-zenhei \
+            ffmpeg
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Produce new episode
+        # schedule + workflow_dispatch (unless skip_generation) → generate
+        # push → never generate, just rebuild templates
+        if: github.event_name != 'push' && inputs.skip_generation != true
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: |
+          python3 batch.py \
+            --count ${{ inputs.count || '1' }} \
+            --audio-only \
+            --words 600
+
+      - name: Persist outputs/ to content branch
+        if: github.event_name != 'push' && inputs.skip_generation != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 初始化或 clone content 分支工作副本
+          if [ ! -d content-branch/.git ]; then
+            rm -rf content-branch
+            mkdir content-branch
+            cd content-branch
+            git init -q -b content
+            git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          else
+            cd content-branch
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+          cd "$GITHUB_WORKSPACE"
+
+          # 同步整个 outputs/ 到 content 分支
+          rsync -a --delete outputs/ content-branch/outputs/
+
+          cd content-branch
+          git config user.name "bedtime-bot"
+          git config user.email "bedtime-bot@users.noreply.github.com"
+          git add -A outputs
+          if git diff --cached --quiet; then
+            echo "No new content to commit"
+          else
+            git commit -q -m "content: $(date -u +%Y-%m-%d-%H%M)"
+            git push -q origin content
+            echo "Pushed new content to content branch"
+          fi
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v4
+
+      - name: Generate site
+        run: |
+          python3 publish.py \
+            --copy-audio \
+            --base-url "${{ steps.pages.outputs.base_url }}"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
