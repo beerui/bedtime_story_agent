@@ -1740,6 +1740,87 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         }});
       }})();
 
+      // --- Position memory + deep-link resume ---
+      (function() {{
+        const audioEl = document.querySelector('.player audio');
+        if (!audioEl) return;
+        const EP_ID = {json.dumps(ep['folder'], ensure_ascii=False)};
+        const EP_TITLE = {json.dumps(ep['title'], ensure_ascii=False)};
+        const EP_PAGE = location.pathname + location.search;
+        const STORAGE_KEY = 'bedtime-last';
+
+        // Resume: prefer ?t=xx URL param, else localStorage position for THIS episode
+        function getResumeTime() {{
+          const hashMatch = location.hash.match(/[#&]t=(\\d+(?:\\.\\d+)?)/);
+          if (hashMatch) return parseFloat(hashMatch[1]);
+          try {{
+            const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+            if (saved && saved.ep_id === EP_ID && saved.t > 0) {{
+              // only resume if meaningful progress (> 10s) and not stale (< 30 days)
+              const ageMs = Date.now() - (saved.ts || 0);
+              if (saved.t > 10 && ageMs < 30 * 24 * 3600 * 1000) return saved.t;
+            }}
+          }} catch (e) {{}}
+          return 0;
+        }}
+        audioEl.addEventListener('loadedmetadata', () => {{
+          const t = getResumeTime();
+          if (t > 0 && t < audioEl.duration - 5) {{
+            audioEl.currentTime = t;
+          }}
+        }});
+
+        // Save position every ~10s while playing
+        let lastSave = 0;
+        audioEl.addEventListener('timeupdate', () => {{
+          const now = Date.now();
+          if (now - lastSave < 10_000) return;
+          lastSave = now;
+          if (audioEl.currentTime < 5 || !audioEl.duration) return;
+          try {{
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({{
+              ep_id: EP_ID,
+              title: EP_TITLE,
+              page: EP_PAGE,
+              t: audioEl.currentTime,
+              duration: audioEl.duration,
+              ts: now,
+            }}));
+          }} catch (e) {{}}
+        }});
+        // Clear on completion
+        audioEl.addEventListener('ended', () => {{
+          try {{
+            const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+            if (saved && saved.ep_id === EP_ID) localStorage.removeItem(STORAGE_KEY);
+          }} catch (e) {{}}
+        }});
+
+        // --- Media Session API (iOS lock screen / Android notification / car BT) ---
+        if ('mediaSession' in navigator) {{
+          navigator.mediaSession.metadata = new MediaMetadata({{
+            title: EP_TITLE,
+            artist: {json.dumps(PODCAST_AUTHOR, ensure_ascii=False)},
+            album: {json.dumps(PODCAST_TITLE, ensure_ascii=False)},
+            artwork: [
+              {{ src: {json.dumps(og_image, ensure_ascii=False)}, sizes: '1200x630', type: 'image/png' }},
+            ],
+          }});
+          try {{
+            navigator.mediaSession.setActionHandler('play', () => audioEl.play());
+            navigator.mediaSession.setActionHandler('pause', () => audioEl.pause());
+            navigator.mediaSession.setActionHandler('seekbackward', (e) => {{
+              audioEl.currentTime = Math.max(0, audioEl.currentTime - (e.seekOffset || 15));
+            }});
+            navigator.mediaSession.setActionHandler('seekforward', (e) => {{
+              audioEl.currentTime = Math.min(audioEl.duration, audioEl.currentTime + (e.seekOffset || 15));
+            }});
+            {f"navigator.mediaSession.setActionHandler('previoustrack', () => location.href = {json.dumps(_episode_slug(prev_ep) + '.html', ensure_ascii=False)});" if prev_ep else ""}
+            {f"navigator.mediaSession.setActionHandler('nexttrack', () => location.href = {json.dumps(_episode_slug(next_ep) + '.html', ensure_ascii=False)});" if next_ep else ""}
+          }} catch (e) {{}}
+        }}
+      }})();
+
       // --- Playback speed cycle ---
       const _SPEEDS = [1, 1.25, 1.5, 0.75];
       let _speedIdx = 0;
@@ -3323,6 +3404,44 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
       header h1 {{ font-size: 1.4rem; }}
     }}
 
+    /* --- continue listening card (returning-visitor resume) --- */
+    .continue-listening {{
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 28px;
+      padding: 14px 18px;
+      background: linear-gradient(135deg, rgba(240,194,127,0.09), rgba(124,111,247,0.05));
+      border: 1px solid rgba(240,194,127,0.28);
+      border-radius: 14px;
+    }}
+    .continue-listening[hidden] {{ display: none; }}
+    .cl-body {{ flex: 1; min-width: 0; }}
+    .cl-label {{
+      font-size: 0.7rem; color: var(--warm);
+      letter-spacing: 0.15em; text-transform: uppercase;
+      margin-bottom: 4px;
+    }}
+    .cl-title {{
+      display: block; font-size: 0.98rem; font-weight: 600;
+      color: var(--text); text-decoration: none;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }}
+    .cl-title:hover {{ color: var(--accent); }}
+    .cl-progress {{
+      margin-top: 8px; height: 3px;
+      background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+    }}
+    .cl-fill {{ height: 100%; background: linear-gradient(90deg, var(--warm), var(--accent)); }}
+    .cl-time {{
+      margin-top: 4px; font-size: 0.7rem; color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }}
+    .cl-dismiss {{
+      background: none; border: none; color: var(--text-dim);
+      font-size: 1rem; cursor: pointer; padding: 6px 10px;
+      transition: color 0.2s;
+    }}
+    .cl-dismiss:hover {{ color: var(--text); }}
+
     /* --- subscribe row (primary CTA, above the fold) --- */
     .subscribe {{
       margin: 0 0 36px;
@@ -3500,6 +3619,16 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         </div>
       </header>
 
+      <section class="continue-listening" id="continueCard" hidden>
+        <div class="cl-body">
+          <div class="cl-label">继续收听</div>
+          <a class="cl-title" id="clTitle" href="#"></a>
+          <div class="cl-progress"><div class="cl-fill" id="clFill"></div></div>
+          <div class="cl-time" id="clTime"></div>
+        </div>
+        <button class="cl-dismiss" onclick="dismissContinue()" title="不再显示">✕</button>
+      </section>
+
       {subscribe_html}
 
       {newsletter_html}
@@ -3652,6 +3781,36 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         navigator.serviceWorker.register('sw.js').catch(() => {{}});
       }});
     }}
+
+    // --- Continue listening card ---
+    function dismissContinue() {{
+      try {{ localStorage.removeItem('bedtime-last'); }} catch (e) {{}}
+      document.getElementById('continueCard').hidden = true;
+      if (window.trackEvent) window.trackEvent('Dismiss Continue Card');
+    }}
+    (function() {{
+      let saved;
+      try {{ saved = JSON.parse(localStorage.getItem('bedtime-last') || 'null'); }}
+      catch (e) {{ return; }}
+      if (!saved || !saved.ep_id || !saved.t || !saved.duration) return;
+      const ageH = (Date.now() - (saved.ts || 0)) / (3600 * 1000);
+      if (ageH > 48) return;  // stale
+      const pct = saved.t / saved.duration;
+      if (pct < 0.05 || pct > 0.92) return;  // too fresh or near-done
+      const card = document.getElementById('continueCard');
+      const titleA = document.getElementById('clTitle');
+      if (!card || !titleA) return;
+      titleA.textContent = saved.title || '未命名';
+      const page = saved.page || `episodes/${{saved.ep_id}}.html`;
+      titleA.href = page + (page.includes('#') ? '&' : '#') + 't=' + Math.floor(saved.t);
+      document.getElementById('clFill').style.width = (pct * 100).toFixed(1) + '%';
+      const fmtT = (s) => {{
+        s = Math.floor(s); const m = Math.floor(s/60);
+        return m + ':' + String(s%60).padStart(2,'0');
+      }};
+      document.getElementById('clTime').textContent = fmtT(saved.t) + ' / ' + fmtT(saved.duration) + ' · ' + Math.floor(ageH) + 'h 前';
+      card.hidden = false;
+    }})();
 
     // --- Starfield ---
     (function() {{

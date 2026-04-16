@@ -4,6 +4,33 @@
 
 ---
 
+## [2026-04-17] 继续收听 + Media Session API：回访留存 + 锁屏可见性 (publish.py)
+**动因**: 两个独立但关联的 UX 洞：(1) 听众在一期中途离开（睡着/通勤到站/电话打断）后再回来，只能从头听，没有位置记忆——回访用户直接流失掉未完成期；(2) 手机锁屏后看不到当前节目信息，来电/切歌时要解锁才知道在播什么——非原生 App 都缺这一层
+**实现**:
+1. 单期页 audio 加位置记忆：
+   - `timeupdate` 每 10s throttle 保存 `{{ep_id, title, page, t, duration, ts}}` 到 `localStorage['bedtime-last']`
+   - 进度 <5s 不记，避免打开就记；`ended` 时清除本期记录
+   - 加载时 `loadedmetadata` 检查恢复条件：优先 `#t=xx` URL 参数，否则 localStorage 里匹配 ep_id 的未完成位置（>10s 进度 + <30 天）
+   - 自动 seek 时留 5s 余量（避免刚好压在结尾死循环）
+2. Media Session API 集成：
+   - `navigator.mediaSession.metadata = new MediaMetadata({{title, artist, album, artwork}})`
+   - 支持设备：iOS 锁屏、Android 通知栏、车载蓝牙 HUD、AirPods Max Digital Crown、部分耳机的按键
+   - `setActionHandler` 注册 play/pause/seekbackward/seekforward；prev_ep/next_ep 存在时注册 previoustrack/nexttrack 直接导航到相邻期
+3. 首页「继续收听」卡片：
+   - `<section class="continue-listening" hidden>` 默认隐藏
+   - 页面加载时 JS 读 localStorage：48h 内、进度 5%-92%（过新/过旧都不显示）才亮出
+   - 紫金渐变边框，显示标题+进度条+「X:XX / X:XX · XXh 前」
+   - 点击标题跳回原单期页并附 `#t=XX` 深链，seek 到上次位置
+   - × 按钮清除记忆 + 触发 `Dismiss Continue Card` 埋点
+**验证**:
+- episode 页含 9 处 continueCard/localStorage/mediaSession 相关代码（6 处 setActionHandler 含 prev/next）
+- 首页含 5 处 continueCard/localStorage 相关代码
+- localStorage key 统一用 'bedtime-last'，首页和单期页完全对齐
+**下一步**:
+- 目前只记住最后一期；可升级为 episode → latest_t map，看多期历史
+- Media Session 的 artwork 目前指向 OG cover（1200x630 横图），但规范里更适合方形——可切到 `og/{folder}.png` 但那本就是横图；后续生成单期专属方形 cover 再切换
+- 首页继续收听卡可扩展成「我的最近 3 期」个人化列表
+
 ## [2026-04-17] PWA 能力：离线 + 可安装到主屏幕 (publish.py + covers.py)
 **动因**: 助眠场景大多在无信号/弱信号环境（地铁、飞机、睡前关 WiFi）。首次访问站点后，再断网就完全打不开——即使只想回听已下载的一期。加 PWA 能力让用户：(1) 首次访问后可「添加到主屏幕」像原生 App；(2) 离线能打开 app shell（首页、分类、关于、FAQ、统计等所有静态页）；(3) 服务 worker 在后台更新缓存
 **实现**:

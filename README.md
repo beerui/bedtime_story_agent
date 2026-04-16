@@ -91,6 +91,8 @@ cd site && python3 -m http.server 8888
 - **邮件订阅**（Newsletter）— 在 `monetization.json` 里填 `endpoint_url` 即启用；兼容 FormSubmit / Buttondown / Formspark / Formspree 等任何接收 HTML form POST 的服务；自动渲染到首页订阅区下方 + 单期页相关推荐上方 + 关于页底部
 - **搜索**（首页）— 客户端实时过滤，按 title/theme/pain_point/技术/tags 模糊匹配；支持 `?q=xxx` URL 参数（Google sitelinks searchbox 可直接跳入）
 - **PWA（渐进式 Web 应用）** — 首次访问后可「添加到主屏幕」像原生 App 一样使用；service worker 缓存 app shell，地铁/飞机/无信号也能打开首页和主要页面；iOS/Android 都支持
+- **继续收听** — localStorage 每 10s 记录听众进度；返回首页看到「继续收听 X（3:42 处）」卡片（48h 内、进度 5%-92% 才显示）；单期页支持 `#t=90` 深链直接跳到某秒
+- **Media Session API** — iOS 锁屏、Android 通知栏、车载蓝牙都能看到当前节目标题+封面+上下集；支持硬件按键 play/pause/±15s seek
 - **SEO 结构化数据** — `PodcastSeries` / `PodcastEpisode` / `FAQPage` / `BreadcrumbList` / `WebSite+SearchAction` 全覆盖，争取 Google 富媒体搜索结果
 
 `monetization.json` 已加入 `.gitignore`，不会被推到 public repo。
