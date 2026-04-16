@@ -75,20 +75,37 @@ jobs:
       - name: Install Python deps
         run: pip install -r requirements.txt
 
-      - name: Produce new episode
-        # schedule + workflow_dispatch (unless skip_generation) → generate
-        # push → never generate, just rebuild templates
+      - name: Check API key presence
         if: github.event_name != 'push' && inputs.skip_generation != true
         env:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
         run: |
+          if [ -z "$DASHSCOPE_API_KEY" ]; then
+            echo "::warning::DASHSCOPE_API_KEY secret 未配置——跳过节目生产，只部署占位站点"
+            echo "SKIP_GEN=1" >> $GITHUB_ENV
+          fi
+
+      - name: Produce new episode
+        # schedule + workflow_dispatch (unless skip_generation) → generate
+        # push → never generate, just rebuild templates
+        if: github.event_name != 'push' && inputs.skip_generation != true && env.SKIP_GEN != '1'
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: |
+          set -e
           python3 batch.py \
             --count ${{ inputs.count || '1' }} \
             --audio-only \
             --words 600
+          # fail-fast: if no outputs created, don't silently deploy empty site
+          if [ -z "$(ls -A outputs 2>/dev/null | grep -v '^\\.')" ]; then
+            echo "::error::batch.py 未产出任何内容——检查上方日志"
+            exit 1
+          fi
+          echo "Produced folders: $(ls outputs | wc -l)"
 
       - name: Persist outputs/ to content branch
-        if: github.event_name != 'push' && inputs.skip_generation != true
+        if: github.event_name != 'push' && inputs.skip_generation != true && env.SKIP_GEN != '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

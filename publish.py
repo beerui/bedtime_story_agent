@@ -410,6 +410,69 @@ def _build_support_html(m: dict) -> str:
     return tiles_section + aff_html
 
 
+def _build_placeholder_html(base_url: str) -> str:
+    """Minimal self-contained landing page for when outputs/ is empty.
+
+    Used on first deployment when no episode has been produced yet — ensures the
+    GitHub Pages pipeline succeeds and the user gets a visible page explaining
+    what went wrong and what to do next."""
+    site_url = (base_url or "").rstrip("/")
+    return textwrap.dedent(f"""\
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{PODCAST_TITLE} · 准备中</title>
+    <meta name="description" content="{PODCAST_DESC}">
+    <meta name="robots" content="noindex">
+    <style>
+      body {{
+        background: #06061a; color: #d4d4e0;
+        font-family: -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+        display: flex; align-items: center; justify-content: center;
+        min-height: 100vh; margin: 0; padding: 20px; text-align: center;
+      }}
+      .wrap {{ max-width: 520px; }}
+      h1 {{
+        font-size: 1.8rem; margin-bottom: 20px;
+        background: linear-gradient(135deg, #f0c27f, #7c6ff7);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }}
+      p {{ line-height: 1.8; color: #9a9ab0; margin-bottom: 14px; }}
+      code {{
+        background: rgba(255,255,255,0.06);
+        padding: 2px 8px; border-radius: 6px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        color: #f0c27f;
+      }}
+      ol {{ text-align: left; color: #9a9ab0; line-height: 2; padding-left: 1.2em; }}
+      .dot {{
+        display: inline-block; width: 8px; height: 8px;
+        background: #f0c27f; border-radius: 50%;
+        animation: pulse 1.6s ease-in-out infinite alternate;
+        margin-right: 6px; vertical-align: middle;
+      }}
+      @keyframes pulse {{ 0% {{ opacity: 0.3; }} 100% {{ opacity: 1; }} }}
+    </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <h1>助眠电台 · 准备中</h1>
+        <p><span class="dot"></span>站点已部署，但还没有节目内容。</p>
+        <p>通常是因为生产环节没能产出音频。最常见原因：</p>
+        <ol>
+          <li><code>DASHSCOPE_API_KEY</code> 没配在 Secrets 里</li>
+          <li>API 配额耗尽（<code>batch.py</code> 会降级到 edge-tts，但仍需 Qwen 生成文本）</li>
+          <li>workflow 首次运行时 <code>content</code> 分支不存在（正常，下次会建立）</li>
+        </ol>
+        <p>查看 Actions 标签页最新一次运行的日志，定位失败的 step。</p>
+      </div>
+    </body>
+    </html>
+    """)
+
+
 def _build_head_meta(episodes: list[dict], m: dict, base_url: str, cover_rel: str = "og/home.png") -> str:
     site_url = (base_url or (m or {}).get("site_url") or "").rstrip("/")
     tagline = _esc(m.get("brand_tagline") or PODCAST_DESC)
@@ -1490,12 +1553,22 @@ def main():
     args = parser.parse_args()
 
     episodes = scan_episodes(OUTPUTS_DIR)
-    if not episodes:
-        print("outputs/ 中没有找到可用的音频内容。先运行 python3 batch.py --count 1 --audio-only")
-        return
-
-    # create site/
+    # Always produce a site/ — even with 0 episodes — so CI pipelines like
+    # GitHub Actions' upload-pages-artifact have a directory to tar. This turns
+    # "batch.py had no outputs" into a visible placeholder landing instead of
+    # an opaque tar failure.
     SITE_DIR.mkdir(exist_ok=True)
+
+    if not episodes:
+        print("[warn] outputs/ 中没有节目——生成占位站点，供 CI/Pages 部署成功")
+        placeholder = _build_placeholder_html(args.base_url)
+        (SITE_DIR / "index.html").write_text(placeholder, encoding="utf-8")
+        (SITE_DIR / "robots.txt").write_text(
+            "User-agent: *\nAllow: /\n", encoding="utf-8"
+        )
+        print(f"[OK] 占位页 → {SITE_DIR / 'index.html'}")
+        print("\n下一步：确认 DASHSCOPE_API_KEY 已配置，手动触发 workflow_dispatch 生产第一期")
+        return
 
     if args.copy_audio:
         deploy_audio(episodes, SITE_DIR)
