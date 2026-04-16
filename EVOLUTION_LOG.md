@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-04-17] doctor.py --remote 模式：已部署站点的 HTTP 健康检查 (doctor.py + Makefile)
+**动因**: doctor.py 只检查本地 `site/` 目录的静态正确性——但部署后用户没工具验证线上真的在跑。Pages 可能配置错、CDN 可能 cache 了旧版、某个资源 404 都只能手动 curl 发现
+**实现**:
+1. `check_remote(base_url)` 函数：并行发起 6 个 HTTP GET，检查：
+   - `/` 主页：200 + content-type html + 含 `<title>`
+   - `/feed.xml`：200 + 含 `<rss>` + 至少 1 个 `<item>`（<3 期时 info 提示）
+   - `/sitemap.xml`：200 + 含 `<urlset>`
+   - `/podcast-cover.png`：200 + content-type image
+   - `/manifest.webmanifest`：200 + JSON 可解析
+   - 一期 episode 页（从 feed 解析第一条 guid）：200 + 含 `<audio>`
+2. 用 urllib.request（无第三方依赖），URL 路径段用 `urllib.parse.quote` 编码（Chinese 文件名需要）
+3. 超时 10s / 15s（封面）避免挂死
+4. 结果复用 scan_site 的 `report: {url: [issues]}` 形状——同一套打印逻辑
+5. main 新增 `--remote URL` 参数，触发远端模式；summary 打印适配（"检查远端 URL" 而非"扫描 site/"）
+6. Makefile 新增 `make doctor-remote URL=...`
+**验证**: 本地启 `python -m http.server 18889` 模拟部署 → `doctor --remote http://localhost:18889` → 6 个 URL 全绿通过，中文路径正确编码
+**使用场景**:
+- 首次部署后 → `make doctor-remote URL=https://xxx.github.io/repo`（一眼看线上是否真的起来了）
+- 日常监控 → cron / UptimeRobot 可直接调 `doctor.py --remote ... --json` 做 webhook 告警
+- 迁移 / 换域名 → 快速确认新 URL 全部资源可达
+
 ## [2026-04-17] LICENSE + 单期页加变现板块：转化黄金点补位 (LICENSE + publish.py)
 **动因**: 两个真实问题——
 - **LICENSE 文件缺失**：README 声明 MIT 但根目录没 LICENSE 文件，法律上等于"all rights reserved"。开源 repo 必要的法律基础

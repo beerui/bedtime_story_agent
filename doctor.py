@@ -179,14 +179,144 @@ def scan_site(site_dir: Path, only: str | None = None) -> dict[str, list[dict]]:
     return report
 
 
+def check_remote(base_url: str) -> dict[str, list[dict]]:
+    """Verify deployed site is live + healthy via HTTP.
+
+    Checks homepage, feed.xml, sitemap.xml, podcast-cover.png, and a sample
+    episode page. Returns per-URL issue list matching scan_site shape so the
+    same reporting code works for both."""
+    import urllib.request
+    import urllib.error
+
+    base = base_url.rstrip("/")
+    report: dict[str, list[dict]] = {}
+
+    def _fetch(path: str, timeout: int = 10) -> tuple[int | None, str, bytes]:
+        # URL-encode path segments (Chinese filenames in episodes/ etc.)
+        from urllib.parse import quote
+        path_enc = quote(path, safe="/.~-_")
+        url = base + path_enc if path_enc.startswith("/") else base + "/" + path_enc
+        req = urllib.request.Request(url, headers={"User-Agent": "bedtime-doctor/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.status, r.headers.get("Content-Type", "") or "", r.read(200_000)
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers.get("Content-Type", "") or "", b""
+        except Exception as e:
+            return None, "", str(e).encode()
+
+    # Homepage
+    status, ctype, body = _fetch("/")
+    issues: list[dict] = []
+    if status != 200:
+        issues.append({"severity": "error", "code": "home_not_200",
+                       "message": f"主页返回 {status}: {body[:200].decode(errors='replace')}"})
+    elif "html" not in ctype.lower():
+        issues.append({"severity": "warning", "code": "home_bad_ctype",
+                       "message": f"主页 content-type={ctype}"})
+    if not issues:
+        if b"<title>" not in body[:50_000]:
+            issues.append({"severity": "warning", "code": "home_no_title",
+                           "message": "主页看起来没有 <title>（可能返回了错误页）"})
+    if issues:
+        report["/ (homepage)"] = issues
+
+    # feed.xml
+    issues = []
+    status, ctype, body = _fetch("/feed.xml")
+    if status != 200:
+        issues.append({"severity": "error", "code": "feed_not_200",
+                       "message": f"feed.xml 返回 {status}"})
+    elif b"<rss" not in body[:5000]:
+        issues.append({"severity": "error", "code": "feed_invalid",
+                       "message": "feed.xml 不含 <rss> 根——不是有效 RSS"})
+    else:
+        # Count items
+        item_count = body.count(b"<item>")
+        if item_count == 0:
+            issues.append({"severity": "error", "code": "feed_no_items",
+                           "message": "feed.xml 没有 <item>——订阅者看不到任何期"})
+        elif item_count < 3:
+            issues.append({"severity": "info", "code": "feed_few_items",
+                           "message": f"feed.xml 仅 {item_count} 期——平台通常至少要 3 期才推荐"})
+    if issues:
+        report["/feed.xml"] = issues
+
+    # sitemap.xml
+    issues = []
+    status, ctype, body = _fetch("/sitemap.xml")
+    if status != 200:
+        issues.append({"severity": "warning", "code": "sitemap_not_200",
+                       "message": f"sitemap.xml 返回 {status}（Google 搜索引擎依赖）"})
+    elif b"<urlset" not in body[:2000]:
+        issues.append({"severity": "error", "code": "sitemap_invalid",
+                       "message": "sitemap.xml 不含 <urlset>"})
+    if issues:
+        report["/sitemap.xml"] = issues
+
+    # podcast-cover.png
+    issues = []
+    status, ctype, body = _fetch("/podcast-cover.png", timeout=15)
+    if status != 200:
+        issues.append({"severity": "warning", "code": "cover_not_200",
+                       "message": f"podcast-cover.png 返回 {status}（Apple Podcasts 提交需要）"})
+    elif not ctype.startswith("image/"):
+        issues.append({"severity": "warning", "code": "cover_bad_ctype",
+                       "message": f"podcast-cover.png content-type={ctype} 不是图片"})
+    if issues:
+        report["/podcast-cover.png"] = issues
+
+    # manifest.webmanifest
+    issues = []
+    status, ctype, body = _fetch("/manifest.webmanifest")
+    if status != 200:
+        issues.append({"severity": "warning", "code": "manifest_not_200",
+                       "message": f"manifest.webmanifest 返回 {status}（PWA install 会失败）"})
+    else:
+        try:
+            json.loads(body)
+        except Exception as e:
+            issues.append({"severity": "warning", "code": "manifest_invalid",
+                           "message": f"manifest.webmanifest JSON 解析失败: {e}"})
+    if issues:
+        report["/manifest.webmanifest"] = issues
+
+    # Sample episode page — parse first <item>'s guid from feed
+    import re as _re
+    ep_guid_m = _re.search(rb"<guid[^>]*>([^<]+)</guid>", body if status == 200 else b"")
+    status, ctype, feed_body = _fetch("/feed.xml")
+    if status == 200:
+        ep_guid_m = _re.search(rb"<guid[^>]*>([^<]+)</guid>", feed_body)
+        if ep_guid_m:
+            guid = ep_guid_m.group(1).decode(errors="replace")
+            issues = []
+            status, ctype, body = _fetch(f"/episodes/{guid}.html")
+            if status != 200:
+                issues.append({"severity": "error", "code": "episode_not_200",
+                               "message": f"Sample episode /episodes/{guid}.html 返回 {status}"})
+            elif b"<audio" not in body:
+                issues.append({"severity": "warning", "code": "episode_no_audio",
+                               "message": "单期页不含 <audio> 元素"})
+            if issues:
+                report[f"/episodes/{guid}.html"] = issues
+
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--page", help="只诊断文件名包含此子串的页")
     parser.add_argument("--json", action="store_true", help="JSON 输出给 CI")
     parser.add_argument("--summary", action="store_true", help="只打总结")
+    parser.add_argument("--remote", metavar="URL",
+                        help="远端模式：HTTP 检查已部署站点健康度（例 --remote https://xxx.github.io/repo）")
     args = parser.parse_args()
 
-    report = scan_site(SITE, only=args.page)
+    if args.remote:
+        print(f"🌐 远端健康检查  {args.remote}")
+        report = check_remote(args.remote)
+    else:
+        report = scan_site(SITE, only=args.page)
 
     error_count = sum(1 for issues in report.values() for i in issues if i["severity"] == "error")
     warn_count = sum(1 for issues in report.values() for i in issues if i["severity"] == "warning")
@@ -207,7 +337,10 @@ def main() -> int:
                     print(f"  {color}[{sev}]{RESET} {iss['code']}: {iss['message']}")
         print()
         print(f"{DIM}─ 诊断报告 ─{RESET}")
-        print(f"  扫描 site/ 共 {len(list(SITE.rglob('*')))} 项资源")
+        if args.remote:
+            print(f"  检查远端 {args.remote}（共 {len(report) + (0 if report else 5)} 个 URL）")
+        else:
+            print(f"  扫描 site/ 共 {len(list(SITE.rglob('*')))} 项资源")
         if error_count:
             print(f"  {RED}error:   {error_count}{RESET}")
         if warn_count:

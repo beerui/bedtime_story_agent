@@ -39,6 +39,9 @@ launch:  ## 启动前诊断，告诉你当前卡点在哪
 doctor:  ## 全站静态健康诊断（生成后跑）
 	python3 doctor.py
 
+doctor-remote:  ## 检查已部署站点: make doctor-remote URL=https://xxx
+	python3 doctor.py --remote $(URL)
+
 check: test  ## 跑全套校验（tests + validate + doctor）
 	python3 validate.py
 	@if [ -d site ]; then python3 doctor.py; fi
