@@ -45,7 +45,7 @@ def _check_api_key():
         sys.exit(1)
 
 
-async def produce_one(theme_name, output_dir, target_words, audio_only=False, dedup=None, episode=None):
+async def produce_one(theme_name, output_dir, target_words, audio_only=False, dedup=None, episode=None, binaural=False):
     """生产单期内容，返回结果摘要 dict。"""
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs("assets", exist_ok=True)
@@ -88,6 +88,15 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False, de
 
         # 4. 响度归一化
         engine.normalize_audio_loudness(final_audio)
+
+        # 4b. 双耳节拍增强（可选）
+        if binaural:
+            from binaural import enhance_audio
+            binaural_path = await asyncio.to_thread(
+                enhance_audio, final_audio
+            )
+            result["binaural_audio"] = binaural_path
+            console.print(f"  [magenta]双耳节拍增强: {os.path.basename(binaural_path)}[/magenta]")
 
         # 5. 发布元数据
         metadata = await asyncio.to_thread(
@@ -185,7 +194,7 @@ async def batch_main(args):
             output_dir = f"outputs/Batch_{ts}_{theme_name}{ep_suffix}"
             results[idx] = await produce_one(
                 theme_name, output_dir, args.words, args.audio_only,
-                dedup=dedup, episode=episode,
+                dedup=dedup, episode=episode, binaural=args.binaural,
             )
             results[idx]["label"] = label
 
@@ -244,6 +253,9 @@ def main():
     )
     parser.add_argument(
         "--series", type=int, default=1, help="系列模式：每个主题生成 N 期不同内容（如 --series 5 生成第1-5夜）"
+    )
+    parser.add_argument(
+        "--binaural", action="store_true", help="为成品音频叠加双耳节拍（Alpha→Delta 助眠增强）"
     )
     args = parser.parse_args()
 
