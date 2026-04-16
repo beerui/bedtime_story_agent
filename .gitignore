@@ -38,3 +38,6 @@ site/
 .pikiclaw/*
 !.pikiclaw/skills/
 !.pikiclaw/skills/**
+
+# Monetization secrets (user's real affiliate/donation links)
+monetization.json

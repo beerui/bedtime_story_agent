@@ -1,0 +1,55 @@
+{
+  "_comment": "复制为 monetization.json 并填入真实链接，publish.py 会自动读取并在站点底部渲染变现板块。所有字段均可选；省略的块不会显示。",
+  "site_url": "https://你的域名.com",
+  "brand_tagline": "每晚 10 分钟，被温柔的声音带入梦境",
+  "donation": {
+    "enabled": true,
+    "label": "请我喝杯助眠茶",
+    "icon": "☕",
+    "url": "https://afdian.net/a/你的用户名",
+    "note": "如果它帮你睡着了，一杯茶钱就能让这个电台持续跑下去"
+  },
+  "sponsor_slot": {
+    "enabled": true,
+    "label": "本期赞助位",
+    "text": "这里等待你的品牌 · 助眠相关优先",
+    "url": "mailto:hello@你的域名.com?subject=助眠电台%20赞助合作"
+  },
+  "affiliates": {
+    "enabled": true,
+    "title": "听众睡得更好的小装备",
+    "disclaimer": "以下商品为联盟推广，通过链接购买不会让你多花钱，但会给电台一点补贴。",
+    "items": [
+      {
+        "title": "蒸汽热敷眼罩（40°C · 10 分钟）",
+        "desc": "睡前覆眼，热敷放松眼周肌肉",
+        "url": "https://s.click.taobao.com/替换为你的推广链接1",
+        "emoji": "👁️"
+      },
+      {
+        "title": "白噪音机（20 种自然声 · 定时）",
+        "desc": "床头常备，盖住室友/邻居的噪音",
+        "url": "https://s.click.taobao.com/替换为你的推广链接2",
+        "emoji": "🌊"
+      },
+      {
+        "title": "降噪硅胶耳塞（29dB · 久戴不痛）",
+        "desc": "搭配本电台使用效果翻倍",
+        "url": "https://s.click.taobao.com/替换为你的推广链接3",
+        "emoji": "🎧"
+      }
+    ]
+  },
+  "premium": {
+    "enabled": false,
+    "label": "会员专享 · 无 BGM 纯人声版",
+    "url": "https://你的域名.com/premium",
+    "price_note": "¥9.9/月 · 解锁全部 13 个主题的纯人声长版"
+  },
+  "social": {
+    "wechat_mp": "",
+    "xiaohongshu": "",
+    "bilibili": "",
+    "contact_email": "hello@你的域名.com"
+  }
+}

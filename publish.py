@@ -12,9 +12,11 @@
 """
 import argparse
 import datetime
+import html as html_mod
 import http.server
 import json
 import os
+import shutil
 import struct
 import textwrap
 import threading
@@ -23,14 +25,28 @@ import xml.etree.ElementTree as ET
 from email.utils import formatdate
 from pathlib import Path
 
-OUTPUTS_DIR = Path(__file__).parent / "outputs"
-SITE_DIR = Path(__file__).parent / "site"
+ROOT_DIR = Path(__file__).parent
+OUTPUTS_DIR = ROOT_DIR / "outputs"
+SITE_DIR = ROOT_DIR / "site"
+MONETIZATION_PATH = ROOT_DIR / "monetization.json"
+MONETIZATION_EXAMPLE_PATH = ROOT_DIR / "monetization.example.json"
 
 PODCAST_TITLE = "助眠电台 · Bedtime Story Agent"
 PODCAST_DESC = "全自动 AI 助眠音频——从文字到可发布的成品，每一期都是独一无二的深度睡眠旅程。"
 PODCAST_AUTHOR = "Bedtime Story Agent"
 PODCAST_LANG = "zh-cn"
 PODCAST_CATEGORY = "Health &amp; Fitness"
+
+
+def load_monetization() -> dict:
+    """Load monetization.json if present; fall back to the example template."""
+    for path in (MONETIZATION_PATH, MONETIZATION_EXAMPLE_PATH):
+        if path.is_file():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception as e:
+                print(f"[warn] 无法解析 {path.name}: {e}")
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +158,7 @@ def scan_episodes(outputs_dir: Path) -> list[dict]:
                 "description": meta.get("description_xiaoyuzhou", meta.get("description_ximalaya", "")),
                 "tags": meta.get("tags", []),
                 "audio_path": str(audio.relative_to(outputs_dir.parent)),
+                "audio_abs": str(audio),
                 "audio_size": audio.stat().st_size,
                 "duration": duration,
                 "word_count": word_count,
@@ -152,6 +169,40 @@ def scan_episodes(outputs_dir: Path) -> list[dict]:
             }
         )
     return episodes
+
+
+# ---------------------------------------------------------------------------
+# Audio deployment (self-contained site)
+# ---------------------------------------------------------------------------
+
+def deploy_audio(episodes: list[dict], site_dir: Path) -> None:
+    """Copy all episode audio into site/audio/ and set ep['site_audio'] to the
+    relative path inside site/. This makes the site self-contained — deployable
+    to GitHub Pages / Vercel / Netlify without needing outputs/ alongside."""
+    audio_out = site_dir / "audio"
+    audio_out.mkdir(parents=True, exist_ok=True)
+    for ep in episodes:
+        dest_name = f"{ep['folder']}.mp3"
+        dest = audio_out / dest_name
+        src = Path(ep["audio_abs"])
+        if not dest.is_file() or dest.stat().st_mtime < src.stat().st_mtime:
+            shutil.copy2(src, dest)
+        ep["site_audio"] = f"audio/{dest_name}"
+
+
+def resolve_html_audio(ep: dict) -> str:
+    """Path for the <audio> src in the generated HTML (relative to site/index.html)."""
+    if ep.get("site_audio"):
+        return ep["site_audio"]
+    return f"../{ep['audio_path']}"
+
+
+def resolve_rss_audio(ep: dict, base_url: str) -> str:
+    """Absolute URL for the RSS <enclosure>."""
+    rel = ep.get("site_audio") or ep["audio_path"]
+    if base_url:
+        return f"{base_url.rstrip('/')}/{rel}"
+    return rel
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +234,7 @@ def generate_rss(episodes: list[dict], base_url: str) -> str:
         ET.SubElement(item, "description").text = ep["description"]
         ET.SubElement(item, "pubDate").text = ep["pub_date"]
 
-        audio_url = f"{base_url}/{ep['audio_path']}" if base_url else ep["audio_path"]
+        audio_url = resolve_rss_audio(ep, base_url)
         enc = ET.SubElement(item, "enclosure")
         enc.set("url", audio_url)
         enc.set("length", str(ep["audio_size"]))
@@ -208,17 +259,140 @@ def _fmt_duration(seconds: int) -> str:
     return f"{m}:{s:02d}"
 
 
-def generate_html(episodes: list[dict]) -> str:
+def _esc(s: str) -> str:
+    return html_mod.escape(s or "", quote=True)
+
+
+def _build_support_html(m: dict) -> str:
+    """Render the 支持电台 block (donation / sponsor / affiliates / premium)."""
+    if not m:
+        return ""
+    parts: list[str] = []
+
+    don = m.get("donation") or {}
+    if don.get("enabled") and don.get("url"):
+        note = _esc(don.get("note", ""))
+        parts.append(f"""
+      <a class="support-tile support-donation" href="{_esc(don['url'])}" target="_blank" rel="noopener">
+        <div class="support-icon">{_esc(don.get('icon','☕'))}</div>
+        <div class="support-body">
+          <div class="support-title">{_esc(don.get('label','支持我们'))}</div>
+          <div class="support-note">{note}</div>
+        </div>
+      </a>""")
+
+    spon = m.get("sponsor_slot") or {}
+    if spon.get("enabled"):
+        url = spon.get("url", "")
+        href_attr = f' href="{_esc(url)}"' if url else ""
+        tag = "a" if url else "div"
+        parts.append(f"""
+      <{tag} class="support-tile support-sponsor"{href_attr} target="_blank" rel="noopener">
+        <div class="support-icon">💫</div>
+        <div class="support-body">
+          <div class="support-title">{_esc(spon.get('label','本期赞助位'))}</div>
+          <div class="support-note">{_esc(spon.get('text',''))}</div>
+        </div>
+      </{tag}>""")
+
+    prem = m.get("premium") or {}
+    if prem.get("enabled") and prem.get("url"):
+        parts.append(f"""
+      <a class="support-tile support-premium" href="{_esc(prem['url'])}" target="_blank" rel="noopener">
+        <div class="support-icon">🌙</div>
+        <div class="support-body">
+          <div class="support-title">{_esc(prem.get('label','会员专享'))}</div>
+          <div class="support-note">{_esc(prem.get('price_note',''))}</div>
+        </div>
+      </a>""")
+
+    tiles = "\n".join(parts)
+
+    aff = m.get("affiliates") or {}
+    aff_html = ""
+    if aff.get("enabled") and aff.get("items"):
+        item_cards = []
+        for it in aff["items"]:
+            if not it.get("url"):
+                continue
+            item_cards.append(f"""
+        <a class="aff-card" href="{_esc(it['url'])}" target="_blank" rel="nofollow sponsored noopener">
+          <div class="aff-emoji">{_esc(it.get('emoji','🛒'))}</div>
+          <div class="aff-title">{_esc(it.get('title',''))}</div>
+          <div class="aff-desc">{_esc(it.get('desc',''))}</div>
+        </a>""")
+        if item_cards:
+            aff_html = f"""
+    <section class="affiliates">
+      <div class="aff-header">
+        <h2>{_esc(aff.get('title','听众的小装备'))}</h2>
+        <p class="aff-disclaimer">{_esc(aff.get('disclaimer',''))}</p>
+      </div>
+      <div class="aff-grid">{''.join(item_cards)}</div>
+    </section>"""
+
+    if not tiles and not aff_html:
+        return ""
+
+    tiles_section = f"""
+    <section class="support">
+      <h2>支持这个电台</h2>
+      <div class="support-grid">{tiles}</div>
+    </section>""" if tiles else ""
+
+    return tiles_section + aff_html
+
+
+def _build_head_meta(episodes: list[dict], m: dict, base_url: str) -> str:
+    site_url = (m.get("site_url") or base_url or "").rstrip("/")
+    tagline = _esc(m.get("brand_tagline") or PODCAST_DESC)
+    og_url = site_url or ""
+    feed_url = f"{site_url}/feed.xml" if site_url else "feed.xml"
+
+    jsonld = {
+        "@context": "https://schema.org",
+        "@type": "PodcastSeries",
+        "name": PODCAST_TITLE,
+        "description": PODCAST_DESC,
+        "inLanguage": PODCAST_LANG,
+        "author": {"@type": "Person", "name": PODCAST_AUTHOR},
+        "webFeed": feed_url,
+    }
+    if site_url:
+        jsonld["url"] = site_url
+    if episodes:
+        jsonld["numberOfEpisodes"] = len(episodes)
+
+    return textwrap.dedent(f"""\
+    <meta name="description" content="{tagline}">
+    <meta name="keywords" content="助眠,睡眠,冥想,ASMR,白噪音,催眠,播客,深度睡眠">
+    <meta name="author" content="{_esc(PODCAST_AUTHOR)}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{_esc(PODCAST_TITLE)}">
+    <meta property="og:description" content="{tagline}">
+    <meta property="og:site_name" content="{_esc(PODCAST_TITLE)}">
+    <meta property="og:locale" content="zh_CN">
+    {'<meta property="og:url" content="' + _esc(og_url) + '">' if og_url else ''}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{_esc(PODCAST_TITLE)}">
+    <meta name="twitter:description" content="{tagline}">
+    <link rel="alternate" type="application/rss+xml" title="{_esc(PODCAST_TITLE)} RSS" href="{_esc(feed_url)}">
+    <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>""")
+
+
+def generate_html(episodes: list[dict], monetization: dict | None = None, base_url: str = "") -> str:
     """Generate a self-contained dark-themed HTML player page."""
+    monetization = monetization or {}
 
     episode_cards = []
     for i, ep in enumerate(episodes):
         tags_html = "".join(f'<span class="tag">{t}</span>' for t in ep["tags"][:4])
         desc_short = ep["description"][:120] + "…" if len(ep["description"]) > 120 else ep["description"]
         srt_attr = f' data-srt="{ep["srt"][:3000]}"' if ep["srt"] else ""
+        audio_src = resolve_html_audio(ep)
 
         episode_cards.append(f"""
-      <article class="episode" data-audio="../{ep['audio_path']}"{srt_attr}>
+      <article class="episode" data-audio="{audio_src}"{srt_attr}>
         <div class="ep-header">
           <span class="ep-theme">{ep['theme']}</span>
           <span class="ep-meta">{ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</span>
@@ -235,6 +409,8 @@ def generate_html(episodes: list[dict]) -> str:
     cards_html = "\n".join(episode_cards)
     total_eps = len(episodes)
     total_dur = sum(e["duration"] for e in episodes)
+    support_html = _build_support_html(monetization)
+    head_meta = _build_head_meta(episodes, monetization, base_url)
 
     return textwrap.dedent(f"""\
     <!DOCTYPE html>
@@ -243,6 +419,7 @@ def generate_html(episodes: list[dict]) -> str:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>助眠电台</title>
+    {head_meta}
     <style>
     :root {{
       --bg-deep: #06061a;
@@ -390,6 +567,67 @@ def generate_html(episodes: list[dict]) -> str:
       .play-btn {{ width: 40px; height: 40px; right: 16px; }}
       header h1 {{ font-size: 1.4rem; }}
     }}
+
+    /* --- support / monetization --- */
+    .support, .affiliates {{
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 1px solid var(--border);
+    }}
+    .support h2, .affiliates h2 {{
+      font-size: 0.95rem;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: 0.02em;
+    }}
+    .support-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }}
+    .support-tile {{
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-radius: 12px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .support-tile:hover {{
+      background: var(--bg-card-hover);
+      border-color: rgba(124,111,247,0.28);
+      transform: translateY(-1px);
+    }}
+    .support-donation {{ border-color: rgba(240,194,127,0.25); }}
+    .support-donation:hover {{ box-shadow: 0 4px 18px rgba(240,194,127,0.15); }}
+    .support-premium {{ border-color: rgba(124,111,247,0.3); }}
+    .support-icon {{ font-size: 1.6rem; line-height: 1; }}
+    .support-body {{ flex: 1; min-width: 0; }}
+    .support-title {{ font-size: 0.88rem; font-weight: 600; margin-bottom: 2px; }}
+    .support-note {{ font-size: 0.72rem; color: var(--text-dim); line-height: 1.5; }}
+
+    .aff-disclaimer {{
+      font-size: 0.7rem; color: var(--text-dim);
+      margin-top: -8px; margin-bottom: 14px; line-height: 1.6;
+    }}
+    .aff-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }}
+    .aff-card {{
+      display: block; padding: 14px;
+      border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .aff-card:hover {{
+      background: var(--bg-card-hover);
+      border-color: rgba(124,111,247,0.28);
+    }}
+    .aff-emoji {{ font-size: 1.4rem; margin-bottom: 6px; }}
+    .aff-title {{ font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }}
+    .aff-desc {{ font-size: 0.7rem; color: var(--text-dim); line-height: 1.5; }}
     </style>
     </head>
     <body>
@@ -409,6 +647,7 @@ def generate_html(episodes: list[dict]) -> str:
       <main id="episodes">
         {cards_html}
       </main>
+      {support_html}
     </div>
 
     <!-- bottom player -->
@@ -606,6 +845,8 @@ def main():
     parser.add_argument("--base-url", default="", help="音频 URL 前缀（公网部署时使用）")
     parser.add_argument("--serve", action="store_true", help="生成后启动本地 HTTP 服务器并打开浏览器")
     parser.add_argument("--port", type=int, default=8888, help="本地服务器端口（默认 8888）")
+    parser.add_argument("--copy-audio", action="store_true",
+                        help="把 outputs/ 中的音频复制到 site/audio/，使站点可独立部署（GitHub Pages / Vercel）")
     args = parser.parse_args()
 
     episodes = scan_episodes(OUTPUTS_DIR)
@@ -616,8 +857,17 @@ def main():
     # create site/
     SITE_DIR.mkdir(exist_ok=True)
 
+    if args.copy_audio:
+        deploy_audio(episodes, SITE_DIR)
+        print(f"[OK] 音频 → {SITE_DIR / 'audio'}（{len(episodes)} 个文件）")
+
+    monetization = load_monetization()
+    if monetization:
+        src = MONETIZATION_PATH.name if MONETIZATION_PATH.is_file() else MONETIZATION_EXAMPLE_PATH.name
+        print(f"[OK] 变现配置 ← {src}")
+
     # generate HTML player
-    html = generate_html(episodes)
+    html = generate_html(episodes, monetization=monetization, base_url=args.base_url)
     html_path = SITE_DIR / "index.html"
     html_path.write_text(html, encoding="utf-8")
     print(f"[OK] 播放器 → {html_path}")
@@ -631,7 +881,7 @@ def main():
     print(f"\n共 {len(episodes)} 期节目已发布。")
 
     if args.serve:
-        # serve from project root so audio paths resolve correctly
+        # serve from project root so audio paths resolve correctly (in both modes)
         os.chdir(SITE_DIR.parent)
         handler = http.server.SimpleHTTPRequestHandler
         server = http.server.HTTPServer(("", args.port), handler)
@@ -644,8 +894,13 @@ def main():
             print("\n服务器已停止。")
             server.shutdown()
     else:
-        print(f"\n本地预览: cd {SITE_DIR.parent} && python3 -m http.server 8888")
-        print(f"然后打开: http://localhost:8888/site/")
+        if args.copy_audio:
+            print(f"\n本地预览: cd {SITE_DIR} && python3 -m http.server 8888")
+            print(f"部署提示: 直接把 site/ 推送到 GitHub Pages / Vercel 即可上线")
+        else:
+            print(f"\n本地预览: cd {SITE_DIR.parent} && python3 -m http.server 8888")
+            print(f"然后打开: http://localhost:8888/site/")
+            print(f"公网部署请加 --copy-audio（让 site/ 包含全部音频）")
 
 
 if __name__ == "__main__":
