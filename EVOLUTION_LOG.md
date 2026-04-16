@@ -4,6 +4,25 @@
 
 ---
 
+## [2026-04-17] LICENSE + 单期页加变现板块：转化黄金点补位 (LICENSE + publish.py)
+**动因**: 两个真实问题——
+- **LICENSE 文件缺失**：README 声明 MIT 但根目录没 LICENSE 文件，法律上等于"all rights reserved"。开源 repo 必要的法律基础
+- **单期页没变现板块**：首页底部有打赏/联盟/赞助/会员 tiles，但**单期页听完后没有 CTA**。听众刚被治愈那一瞬间的情感峰值才是转化黄金时刻——在首页堆 CTA 不如在单期页 transcript 后放
+**实现**:
+1. 根目录新增 `LICENSE`（MIT）——标准文本，和 README 一致
+2. `generate_episode_page` 调 `_build_support_html(m)` 构造 support tiles HTML，注释标注"listener just finished an episode — peak conversion moment"
+3. 模板体：transcript → nav (prev/next) → newsletter → **support** → related → footer-nav
+4. 布局顺序有意的：nav 引导连听、newsletter 捕获被动关注、support 抓主动付费意愿、related 留住 session
+5. 单期页 CSS 复制首页的 support/affiliate 样式规则（.support/.support-tile/.aff-card 等），保持视觉一致
+**验证**: 
+- `site/LICENSE` 存在
+- 单期页 2 个 section 渲染（monetization.example.json 默认启用 donation + affiliates + sponsor）
+- 未启用时 (`enabled=false` 或 endpoint 为空) 静默不渲染
+**为什么情感峰值转化更高**: 
+- 助眠内容特殊——听完一期真睡着的人 8 小时后才回来，醒来那瞬间的"这对我有用"是最脆弱/开放状态
+- 首页底部 CTA 大多被路过用户看到，没听过内容的人不会打赏
+- 单期页 = 听过 + 现在还在网页上 = 有感受 → 最高转化意愿
+
 ## [2026-04-17] Makefile：10+ 辅助脚本收敛为 `make xxx` (Makefile + README)
 **动因**: 38 轮迭代累积了 10+ 个独立脚本（batch/publish/validate/doctor/launch + 3 个 backfill_ + seed_content.sh + deploy.sh）。用户面对 repo 根目录一堆脚本不知道该按什么顺序跑。需要一个权威的"命令索引"
 **实现**: 

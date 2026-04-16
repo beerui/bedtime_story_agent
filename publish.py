@@ -1333,6 +1333,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     share_text = f"{ep['title']} | {PODCAST_TITLE}"
     analytics_head = _build_analytics_head(m)
     newsletter_html = _build_newsletter_form(m, context="episode")
+    support_html = _build_support_html(m)  # listener just finished an episode — peak conversion moment
 
     # BreadcrumbList for SEO: Home → theme → this episode
     crumbs: list[tuple[str, str]] = [
@@ -1694,6 +1695,60 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       font-size: 0.88rem; color: var(--text); font-weight: 600;
       margin-bottom: 14px;
     }}
+
+    /* Support tiles (listener just finished an episode — peak conversion) */
+    .support, .affiliates {{
+      margin-top: 40px; padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }}
+    .support h2, .affiliates h2 {{
+      font-size: 0.92rem; color: var(--text); font-weight: 600;
+      margin-bottom: 14px; letter-spacing: 0.02em;
+    }}
+    .support-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }}
+    .support-tile {{
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-radius: 12px;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .support-tile:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.28);
+      transform: translateY(-1px);
+    }}
+    .support-donation {{ border-color: rgba(240,194,127,0.25); }}
+    .support-premium {{ border-color: rgba(124,111,247,0.3); }}
+    .support-icon {{ font-size: 1.55rem; line-height: 1; }}
+    .support-body {{ flex: 1; min-width: 0; }}
+    .support-title {{ font-size: 0.88rem; font-weight: 600; margin-bottom: 2px; }}
+    .support-note {{ font-size: 0.72rem; color: var(--dim); line-height: 1.5; }}
+    .aff-disclaimer {{
+      font-size: 0.7rem; color: var(--dim);
+      margin-top: -8px; margin-bottom: 12px; line-height: 1.6;
+    }}
+    .aff-grid {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }}
+    .aff-card {{
+      display: block; padding: 14px; border-radius: 12px;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none;
+      transition: all 0.25s ease;
+    }}
+    .aff-card:hover {{
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(124,111,247,0.28);
+    }}
+    .aff-emoji {{ font-size: 1.35rem; margin-bottom: 6px; }}
+    .aff-title {{ font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }}
+    .aff-desc {{ font-size: 0.7rem; color: var(--dim); line-height: 1.5; }}
     .rel-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1837,6 +1892,8 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
         {nav_html}
 
         {newsletter_html}
+
+        {support_html}
 
         {related_html}
 
