@@ -155,6 +155,15 @@ def check_episode(folder: Path) -> list[dict]:
         if f"[阶段：{phase}]" not in story_text and f"[阶段:{phase}]" not in story_text:
             add("error", "missing_phase", f"剧本缺 [阶段：{phase}] 标记")
 
+    # 尾声段必须用 [极弱] 或 [轻声] 至少一次——这是助眠内容的标志性韵律。
+    # 若缺，说明催眠收尾弱化了，听众不会被安全送入睡眠。
+    m = re.search(r"\[阶段[:：]\s*尾声\](.*)$", story_text, flags=re.DOTALL)
+    if m:
+        ending = m.group(1)
+        if "[极弱]" not in ending and "[轻声]" not in ending:
+            add("warning", "ending_no_whisper",
+                "尾声段没用 [极弱] 或 [轻声]——催眠收尾弱化")
+
     # --- SRT (warning level — old episodes may lack) ---
     srt = folder / "subtitles.srt"
     cue_count = _srt_cue_count(srt)
