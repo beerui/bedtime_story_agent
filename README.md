@@ -86,6 +86,8 @@ cd site && python3 -m http.server 8888
 - **订阅按钮组**（Apple Podcasts / Spotify / 小宇宙 / Overcast / Bilibili，URL 未填则按钮不渲染）
 - **分析埋点**（Plausible / Umami / GA4 三选一）— 首页和所有单期页都会自动注入所选脚本；播放/暂停/完成(80%)/复制 RSS/分享/邮件订阅 已自带 custom events
 - **邮件订阅**（Newsletter）— 在 `monetization.json` 里填 `endpoint_url` 即启用；兼容 FormSubmit / Buttondown / Formspark / Formspree 等任何接收 HTML form POST 的服务；自动渲染到首页订阅区下方 + 单期页相关推荐上方 + 关于页底部
+- **搜索**（首页）— 客户端实时过滤，按 title/theme/pain_point/技术/tags 模糊匹配；支持 `?q=xxx` URL 参数（Google sitelinks searchbox 可直接跳入）
+- **SEO 结构化数据** — `PodcastSeries` / `PodcastEpisode` / `FAQPage` / `BreadcrumbList` / `WebSite+SearchAction` 全覆盖，争取 Google 富媒体搜索结果
 
 `monetization.json` 已加入 `.gitignore`，不会被推到 public repo。
 

@@ -4,6 +4,33 @@
 
 ---
 
+## [2026-04-17] 首页客户端搜索 + BreadcrumbList/SearchAction 结构化数据 (publish.py)
+**动因**: 22 期内容堆在首页，加上 4 分类芯片只能一级过滤——用户心里想的是「失眠」「加班」「AI」这些关键词，需要模糊匹配；SEO 侧少了两块关键结构化数据：BreadcrumbList（子页面导航上下文）和 WebSite SearchAction（Google sitelinks searchbox 曝光）
+**实现**:
+1. 首页新增 `<input type="search">` 搜索框，位于订阅区/newsletter 之下、分类芯片之上：
+   - 实时 `oninput` 过滤 `.episode` 卡片（显示/隐藏通过 `.hide-by-search` class）
+   - 搜索索引 `data-search` 属性预计算：`title + theme + pain_point + technique + tags + desc` 的小写串
+   - 与分类芯片叠加工作：`shown` 计数同时考虑 `hide-by-search` 和 `hide-by-filter`
+   - 右侧显示 `shown/total` 结果数
+   - Debounce 800ms + 去重后触发 `Search Query` 埋点（带 40-char 截断的 query）
+   - 支持 `?q=xxx` URL 参数自动填充（来自 Google sitelinks searchbox）
+2. 新增 `_breadcrumb_jsonld(items)` 辅助：把 `[(name, url), ...]` 列表变成 BreadcrumbList JSON-LD；最后一项 url="" 表示当前页不加链接
+3. 6 类页面注入 BreadcrumbList：
+   - 单期页：Home → theme → [episode]
+   - 主题页：Home → Themes → (category) → [theme]
+   - 分类页：Home → Themes → [category]
+   - 主题 hub：Home → [Themes]
+   - FAQ / About：Home → [页名]
+4. 首页新增 WebSite JSON-LD 含 SearchAction：Google 如果认可，会在搜索结果右侧渲染 sitelinks searchbox，直接从 Google 搜本站
+**验证**:
+- search 功能：输入 "AI" 只剩 AI焦虑相关，输入 "失眠" 匹配含该词的节目，清空恢复全部；右侧 `shown/total` 实时更新
+- 结构化：index.html（BC=0 根页；SA=1 ✓）/ about/faq/themes/category/theme/episode 各 BC=1 ✓
+- 已有分类芯片交互不受影响（search change 时 chip 状态保留，反之亦然）
+**下一步**:
+- 搜索结果为空时可以展示「没找到？试试 [主题 X]」的引导卡
+- BreadcrumbList 仅用 JSON-LD，可考虑再在 UI 上做可见面包屑（目前 episode page 靠 theme-badge 替代）
+- 搜索索引当前每页加载时塞到 HTML（`data-search` 属性），若节目数破 500 可以外置成 `search-index.json` + fetch
+
 ## [2026-04-17] 邮件订阅 form：播客客户端之外的留存通道 (publish.py + monetization.example.json)
 **动因**: 订阅按钮覆盖 Apple Podcasts / Spotify / 小宇宙 / RSS，但中国大量用户不用播客客户端——他们可能看了文稿、收藏了链接然后就再也不来。邮件是最普适的「一键加入 + 定期推送」留存通道，尤其对 AI 内容，每周一封编辑过的精选能主动把用户拉回来
 **实现**:

@@ -661,6 +661,23 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str, cover_rel: st
     if episodes:
         jsonld["numberOfEpisodes"] = len(episodes)
 
+    # WebSite schema with SearchAction → eligible for Google sitelinks searchbox
+    website_jsonld = {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": PODCAST_TITLE,
+        "url": site_url or "/",
+    }
+    if site_url:
+        website_jsonld["potentialAction"] = {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": f"{site_url}/?q={{search_term_string}}",
+            },
+            "query-input": "required name=search_term_string",
+        }
+
     return textwrap.dedent(f"""\
     <meta name="description" content="{tagline}">
     <meta name="keywords" content="助眠,睡眠,冥想,ASMR,白噪音,催眠,播客,深度睡眠">
@@ -680,6 +697,7 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str, cover_rel: st
     <meta name="twitter:image" content="{_esc(og_image)}">
     <link rel="alternate" type="application/rss+xml" title="{_esc(PODCAST_TITLE)} RSS" href="{_esc(feed_url)}">
     <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>
+    <script type="application/ld+json">{json.dumps(website_jsonld, ensure_ascii=False)}</script>
     {_build_analytics_head(m)}""")
 
 
@@ -761,6 +779,25 @@ def _episode_slug(ep: dict) -> str:
 _SRT_BLOCK_RE = re.compile(
     r"(\d+):(\d+):(\d+)[,\.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,\.](\d+)"
 )
+
+
+def _breadcrumb_jsonld(items: list[tuple[str, str]]) -> str:
+    """Build a BreadcrumbList JSON-LD string. items is ordered list of (name, url).
+    Empty URL at the tail item means "current page" (no link)."""
+    if not items:
+        return ""
+    list_items = []
+    for i, (name, url) in enumerate(items, start=1):
+        entry = {"@type": "ListItem", "position": i, "name": name}
+        if url:
+            entry["item"] = url
+        list_items.append(entry)
+    data = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": list_items,
+    }
+    return f'<script type="application/ld+json">{json.dumps(data, ensure_ascii=False)}</script>'
 
 
 def extract_chapters(story_text: str, srt_text: str, title_overrides: dict | None = None) -> list[dict]:
@@ -943,6 +980,16 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     analytics_head = _build_analytics_head(m)
     newsletter_html = _build_newsletter_form(m, context="episode")
 
+    # BreadcrumbList for SEO: Home → theme → this episode
+    crumbs: list[tuple[str, str]] = [
+        ("助眠电台", f"{site_url}/" if site_url else "../index.html"),
+    ]
+    if theme_cfg.get("category") and ep.get("theme"):
+        theme_url = f"{site_url}/theme/{ep['theme']}.html" if site_url else f"../theme/{ep['theme']}.html"
+        crumbs.append((ep["theme"], theme_url))
+    crumbs.append((ep["title"], ""))  # current page, no link
+    breadcrumb_jsonld = _breadcrumb_jsonld(crumbs)
+
     # Pre-filled share copy per platform — empowers fans to 1-click share with
     # platform-appropriate formatting (short for X/Weibo, long for XHS).
     pain_for_share = (theme_cfg.get("pain_point", "") or "").strip()
@@ -1071,6 +1118,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <meta name="twitter:description" content="{_esc(desc_plain[:160])}">
     <meta name="twitter:image" content="{_esc(og_image)}">
     <script type="application/ld+json">{json.dumps(jsonld_ep, ensure_ascii=False)}</script>
+    {breadcrumb_jsonld}
     {analytics_head}
     <style>
     :root {{
@@ -1539,6 +1587,16 @@ def generate_theme_page(theme_name: str, theme_cfg: dict, episodes: list[dict],
     og_image = f"{site_url}/og/home.png" if site_url else "../og/home.png"
     analytics_head = _build_analytics_head(m)
 
+    # Breadcrumbs: Home → Themes hub → Category (if any) → this theme
+    _home_url = f"{site_url}/" if site_url else "../index.html"
+    _themes_url = f"{site_url}/themes.html" if site_url else "../themes.html"
+    crumbs = [("助眠电台", _home_url), ("全部主题", _themes_url)]
+    if cat_key:
+        _cat_url = f"{site_url}/category/{cat_key}.html" if site_url else f"../category/{cat_key}.html"
+        crumbs.append((cat_cfg.get("label", cat_key), _cat_url))
+    crumbs.append((theme_name, ""))
+    breadcrumb_jsonld = _breadcrumb_jsonld(crumbs)
+
     pain = theme_cfg.get("pain_point", "").strip()
     technique = theme_cfg.get("technique", "").strip()
     target = theme_cfg.get("emotional_target", "").strip()
@@ -1600,6 +1658,7 @@ def generate_theme_page(theme_name: str, theme_cfg: dict, episodes: list[dict],
     <meta property="og:image" content="{_esc(og_image)}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
+    {breadcrumb_jsonld}
     {analytics_head}
     <style>
     :root {{
@@ -1737,6 +1796,11 @@ def generate_themes_hub(monetization: dict, base_url: str) -> str:
     og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
     analytics_head = _build_analytics_head(m)
 
+    breadcrumb_jsonld = _breadcrumb_jsonld([
+        ("助眠电台", f"{site_url}/" if site_url else "index.html"),
+        ("全部主题", ""),
+    ])
+
     sections: list[str] = []
     for cat_key, cat_cfg in (_THEME_CATEGORIES or {}).items():
         items = []
@@ -1776,6 +1840,7 @@ def generate_themes_hub(monetization: dict, base_url: str) -> str:
     <meta property="og:image" content="{_esc(og_image)}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
+    {breadcrumb_jsonld}
     {analytics_head}
     <style>
     :root {{
@@ -1857,6 +1922,15 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     cat_feed_rel = f"../feed/{cat_key}.xml"
     analytics_head = _build_analytics_head(m)
 
+    # Breadcrumbs: Home → Themes hub → [this category]
+    _home_url = f"{site_url}/" if site_url else "../index.html"
+    _themes_url = f"{site_url}/themes.html" if site_url else "../themes.html"
+    breadcrumb_jsonld = _breadcrumb_jsonld([
+        ("助眠电台", _home_url),
+        ("全部主题", _themes_url),
+        (label, ""),
+    ])
+
     cards: list[str] = []
     for ep in episodes:
         theme_cfg = _THEMES.get(ep["theme"]) or {}
@@ -1898,6 +1972,7 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
     <link rel="alternate" type="application/rss+xml" title="{_esc(label)} RSS" href="{_esc(cat_feed_rel)}">
+    {breadcrumb_jsonld}
     {analytics_head}
     <style>
     :root {{
@@ -2039,6 +2114,11 @@ def generate_faq_page(monetization: dict, base_url: str) -> str:
     og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
     analytics_head = _build_analytics_head(m)
 
+    breadcrumb_jsonld = _breadcrumb_jsonld([
+        ("助眠电台", f"{site_url}/" if site_url else "index.html"),
+        ("FAQ", ""),
+    ])
+
     qa_pairs = [
         (
             "这些助眠故事是 AI 生成的吗？能信吗？",
@@ -2114,6 +2194,7 @@ def generate_faq_page(monetization: dict, base_url: str) -> str:
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
     <script type="application/ld+json">{json.dumps(faq_jsonld, ensure_ascii=False)}</script>
+    {breadcrumb_jsonld}
     {analytics_head}
     <style>
     :root {{
@@ -2202,6 +2283,11 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
     og_image = f"{site_url}/og/home.png" if site_url else "og/home.png"
     analytics_head = _build_analytics_head(m)
 
+    breadcrumb_jsonld = _breadcrumb_jsonld([
+        ("助眠电台", f"{site_url}/" if site_url else "index.html"),
+        ("关于", ""),
+    ])
+
     # Category sections: pull from THEME_CATEGORIES + count themes per category
     cat_sections: list[str] = []
     by_cat: dict[str, list[str]] = {}
@@ -2268,6 +2354,7 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
     <meta property="og:image" content="{_esc(og_image)}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
+    {breadcrumb_jsonld}
     {analytics_head}
     <style>
     :root {{
@@ -2490,10 +2577,23 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
         srt_attr = f' data-srt="{ep["srt"][:3000]}"' if ep["srt"] else ""
         audio_src = resolve_html_audio(ep)
         ep_href = _episode_href(ep)
-        cat_attr = (_THEMES.get(ep["theme"]) or {}).get("category", "")
+        theme_cfg_ep = _THEMES.get(ep["theme"]) or {}
+        cat_attr = theme_cfg_ep.get("category", "")
+        # Flat lowercase search index: title + theme + pain_point + tags + desc
+        search_parts = [
+            ep.get("title", ""),
+            ep.get("theme", ""),
+            theme_cfg_ep.get("pain_point", ""),
+            theme_cfg_ep.get("technique", ""),
+            " ".join(ep.get("tags", [])),
+            ep.get("description", ""),
+        ]
+        search_idx = " ".join(p for p in search_parts if p).lower()
+        # Escape quotes for safe HTML attribute use
+        search_idx = html_mod.escape(search_idx, quote=True)
 
         episode_cards.append(f"""
-      <article class="episode" data-audio="{audio_src}" data-cat="{cat_attr}"{srt_attr}>
+      <article class="episode" data-audio="{audio_src}" data-cat="{cat_attr}" data-search="{search_idx}"{srt_attr}>
         <div class="ep-header">
           <span class="ep-theme">{ep['theme']}</span>
           <span class="ep-meta">{ep['word_count']} 字 · {_fmt_duration(ep['duration'])}</span>
@@ -2747,6 +2847,32 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
 
     {_NEWSLETTER_CSS}
 
+    /* --- search box --- */
+    .search-box {{
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 16px;
+    }}
+    .search-box input[type="search"] {{
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-family: inherit;
+    }}
+    .search-box input[type="search"]:focus {{
+      outline: none;
+      border-color: rgba(124,111,247,0.5);
+      background: rgba(255,255,255,0.06);
+    }}
+    .search-stats {{
+      font-size: 0.72rem; color: var(--text-dim);
+      min-width: 60px; text-align: right;
+    }}
+    .episode.hide-by-search {{ display: none; }}
+
     /* --- category filter chips --- */
     .filter-chips {{
       display: flex; flex-wrap: wrap; gap: 8px;
@@ -2860,6 +2986,12 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
 
       {newsletter_html}
 
+      <div class="search-box">
+        <input type="search" id="searchInput" placeholder="🔍 搜索主题、痛点或关键词…"
+               aria-label="搜索节目" autocomplete="off">
+        <span class="search-stats" id="searchStats"></span>
+      </div>
+
       {filter_chips_html}
 
       <main id="episodes">
@@ -2954,6 +3086,44 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
           }});
         }});
       }});
+    }})();
+
+    // --- Client-side search (title/theme/pain_point/tags/desc) ---
+    (function() {{
+      const input = document.getElementById('searchInput');
+      const stats = document.getElementById('searchStats');
+      const eps = document.querySelectorAll('.episode');
+      if (!input || !eps.length) return;
+
+      let debounce;
+      let lastQueryTracked = '';
+      function apply() {{
+        const q = input.value.trim().toLowerCase();
+        let shown = 0, total = eps.length;
+        eps.forEach(ep => {{
+          const idx = ep.dataset.search || '';
+          const match = !q || idx.includes(q);
+          ep.classList.toggle('hide-by-search', !match);
+          if (match && !ep.classList.contains('hide-by-filter')) shown++;
+        }});
+        stats.textContent = q ? `${{shown}}/${{total}}` : '';
+        // Track non-trivial queries (≥2 chars, not same as last)
+        if (q.length >= 2 && q !== lastQueryTracked) {{
+          clearTimeout(debounce);
+          debounce = setTimeout(() => {{
+            if (window.trackEvent) window.trackEvent('Search Query', {{ q: q.slice(0, 40) }});
+            lastQueryTracked = q;
+          }}, 800);
+        }}
+      }}
+      input.addEventListener('input', apply);
+      // Re-apply when a category chip flips (so search + filter compose)
+      document.querySelectorAll('.filter-chips .chip').forEach(c => {{
+        c.addEventListener('click', () => setTimeout(apply, 0));
+      }});
+      // Deep-link: ?q=... auto-fills search (supports Google sitelinks searchbox)
+      const urlQ = new URLSearchParams(location.search).get('q');
+      if (urlQ) {{ input.value = urlQ; apply(); }}
     }})();
 
     {_NEWSLETTER_JS}
