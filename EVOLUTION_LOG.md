@@ -4,6 +4,26 @@
 
 ---
 
+## [2026-04-17] publish.py 核心 helpers 回归测试 (tests/test_publish_helpers.py)
+**动因**: publish.py 累计到 4000+ 行、零测试覆盖。过去 22 轮每次 edit 都在赌"没改坏别的地方"——换章节标题格式、改 SRT 时间戳解析、调 breadcrumb JSON、改 form HTML 等等，任何一处静默退化都会让几十个页面跟着坏。应该停下来加一层保护网
+**实现**: 
+1. 新增 `tests/test_publish_helpers.py`，22 个测试覆盖 9 个核心 helpers：
+   - `render_script_plaintext`: 4 用例（阶段标题转换/ cue 括号化/标记清洗/标题覆盖/空输入）
+   - `render_script_html`: 3 用例（h2 渲染/cue em 渲染/段落 p）
+   - `extract_chapters`: 4 用例（phase-cue 对齐/title 覆盖/空输入/章节尾首对接）
+   - `_breadcrumb_jsonld`: 2 用例（ListItem 顺序+当前页无 link/空输入）
+   - `_build_newsletter_form`: 2 用例（未启用隐形/启用 FormSubmit 带蜜罐和特殊字段）
+   - `_fmt_duration` / `_esc` / `_episode_slug` / `_episode_href` / `generate_sitemap`: 各 1-2 用例
+2. 使用 `_mock_episode` helper 生成与 `scan_episodes` 返回形状一致的 ep dict，不依赖实际 outputs/
+3. Golden input `SAMPLE_STORY` + `SAMPLE_SRT` 覆盖典型助眠剧本结构（3 阶段 + 环境音 + 慢速/极弱标记）
+4. 所有测试不依赖 LLM / 外部文件 / 音频库
+5. 50 全量测试（28 原有 + 22 新加）0.029s 跑完，全通过
+**验证**: `python3 -m unittest tests.test_publish_helpers -v` → 22 ok；全量 3 测试文件一起跑 50 ok
+**下一步**:
+- 可加 HTML 生成的快照测试（snapshot testing）锁定整页结构，但需要 golden 输出维护成本
+- `generate_category_page` / `generate_theme_page` / `generate_faq_page` / `generate_about_page` 目前没覆盖——它们接 monetization 和 base_url，测试设置更复杂，下一轮可加
+- Actions workflow 可以加 test step，PR 时自动跑
+
 ## [2026-04-17] 底噪从白噪声升级为棕噪 + BGM 路径 assets/bgm/ (engine.py + validate.py)
 **动因**: 审计发现 18 个主题都声明了 bgm_file（`train_night.mp3`/`heavy_rain_roof.mp3` 等），但 `assets/bgm/` 目录不存在，具体 BGM 文件也都不存在——所有期 BGM 都走了 `generate_soothing_noise` 降级。而原来的降级函数只是白噪声过一个朴素低通卷积——白噪+低通≠棕噪，声音依然偏"嘶"，离睡眠友好差远了
 **实现**:

@@ -157,8 +157,12 @@ python3 publish.py --copy-audio                      # 生成站点
 ./deploy.sh https://user.github.io/repo              # 部署
 
 # 测试
-python3 -m unittest tests.test_cosyvoice_synthesize tests.test_prosody -v   # 28 个 mock 单测
-RUN_COSYVOICE_LIVE=1 python3 -m unittest tests.test_cosyvoice_live -v       # 活调 CosyVoice
+python3 -m unittest tests.test_cosyvoice_synthesize tests.test_prosody tests.test_publish_helpers -v   # 50 个 mock 单测（含 publish 核心 helpers 22 个）
+RUN_COSYVOICE_LIVE=1 python3 -m unittest tests.test_cosyvoice_live -v                                  # 活调 CosyVoice
+
+# 管线健康检查
+python3 validate.py                                  # 全管线 error/warning/info 分级
+python3 validate.py --json                           # CI 消费格式
 
 # 单期排查
 python3 debug.py                                     # 模块级调试
