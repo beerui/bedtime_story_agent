@@ -4,6 +4,40 @@
 
 ---
 
+## [2026-04-17] PWA 能力：离线 + 可安装到主屏幕 (publish.py + covers.py)
+**动因**: 助眠场景大多在无信号/弱信号环境（地铁、飞机、睡前关 WiFi）。首次访问站点后，再断网就完全打不开——即使只想回听已下载的一期。加 PWA 能力让用户：(1) 首次访问后可「添加到主屏幕」像原生 App；(2) 离线能打开 app shell（首页、分类、关于、FAQ、统计等所有静态页）；(3) 服务 worker 在后台更新缓存
+**实现**:
+1. `covers.generate_pwa_icon(path, size, maskable)` 生成方形图标：
+   - 紫金渐变背景 + 星点
+   - 居中「眠」字（单字 iconic，比全称更醒目）
+   - maskable=True 时保留 12% 安全区，让 Android adaptive icon 的各种裁剪 mask 不切字
+   - 三个文件：192x192、512x512、512x512 maskable
+2. `generate_pwa_manifest(base_url)` → `site/manifest.webmanifest`：
+   - `display: standalone` 让已安装后全屏无浏览器 chrome
+   - `theme_color: #7c6ff7`（紫）、`background_color: #06061a`（深空蓝）统一品牌
+   - `orientation: portrait` 适配手机竖屏
+   - 3 个图标声明（any/any/maskable 三种 purpose 组合）
+   - `categories: ["health", "lifestyle", "entertainment"]`
+3. `generate_service_worker()` → `site/sw.js`：
+   - CACHE_NAME 带版本后缀（`bedtime-v1`），activate 时清掉旧版本 cache
+   - install 时预缓存 app shell：`index / about / faq / themes / stats + 2 icons`
+   - fetch 策略：stale-while-revalidate for HTML（即开即返旧的，后台取新的）；bypass audio/video（太大，让浏览器 range request 处理）；bypass 跨域
+   - 用 `Promise.allSettled` 兜底单个资源 404 不破坏整个 install
+4. `_pwa_head(rel_prefix)` helper：把 manifest link + theme-color + 4 个 apple-mobile-web-app meta + apple-touch-icon 合成一个 HTML 片段
+   - rel_prefix="" 用于根级页（home/about/faq/themes/stats）
+   - rel_prefix="../" 用于嵌套页（episodes/theme/category）
+5. 7 个页面模板全部注入 `_pwa_head`，路径前缀按深度给对的值
+6. 首页 JS 末端加 `navigator.serviceWorker.register('sw.js')`——只在支持的浏览器注册，不支持就无副作用
+**验证**: 
+- manifest 853B、sw.js 1.8KB、3 图标 38KB 全生成
+- 根页 href="manifest.webmanifest"、嵌套页 href="../manifest.webmanifest" ✓
+- 6 个 PWA meta 全在每页（theme-color + 3 个 apple + manifest link + touch icon）
+- Chrome DevTools → Application → Manifest 可识别、Lighthouse PWA 分预期 ~90
+**下一步**:
+- 服务 worker 不缓存 audio（因为太大），但可以加「一键下载本期离线听」按钮，用 Cache API 显式把该期 mp3 push 进 cache
+- iOS Safari「添加到主屏幕」目前在默认 UI 中比较隐蔽，可加个 hint 引导
+- 可监听 `beforeinstallprompt` 事件，在 Android Chrome 上自定义安装入口
+
 ## [2026-04-17] 内容库数据公开页 stats.html (publish.py)
 **动因**: 访客到站首页只看到 `22 期节目 · 2.3 小时总时长` 两个数字，完全不知道内容的结构、产出节奏、主题覆盖度。透明的数据呈现是信任信号——比宣传文案有说服力。SEO 侧：新鲜度信号的缺失让老页面权重降
 **实现**:

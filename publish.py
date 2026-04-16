@@ -696,6 +696,7 @@ def _build_head_meta(episodes: list[dict], m: dict, base_url: str, cover_rel: st
     <meta name="twitter:description" content="{tagline}">
     <meta name="twitter:image" content="{_esc(og_image)}">
     <link rel="alternate" type="application/rss+xml" title="{_esc(PODCAST_TITLE)} RSS" href="{_esc(feed_url)}">
+    {_pwa_head("")}
     <script type="application/ld+json">{json.dumps(jsonld, ensure_ascii=False)}</script>
     <script type="application/ld+json">{json.dumps(website_jsonld, ensure_ascii=False)}</script>
     {_build_analytics_head(m)}""")
@@ -819,6 +820,129 @@ def _episode_slug(ep: dict) -> str:
 _SRT_BLOCK_RE = re.compile(
     r"(\d+):(\d+):(\d+)[,\.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,\.](\d+)"
 )
+
+
+def _pwa_head(rel_prefix: str = "") -> str:
+    """Return HTML snippet to place in <head> for PWA support.
+    rel_prefix: '' for root-level pages, '../' for episodes/theme/category/."""
+    p = rel_prefix
+    return (
+        f'<link rel="manifest" href="{p}manifest.webmanifest">'
+        f'<meta name="theme-color" content="#7c6ff7">'
+        f'<meta name="apple-mobile-web-app-capable" content="yes">'
+        f'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+        f'<meta name="apple-mobile-web-app-title" content="助眠电台">'
+        f'<link rel="apple-touch-icon" href="{p}icons/icon-192.png">'
+    )
+
+
+def generate_pwa_manifest(base_url: str) -> str:
+    """Generate manifest.webmanifest for PWA installability (iOS/Android home-screen).
+
+    Minimal spec: name, short_name, description, display=standalone, theme/bg color,
+    start_url, 192+512 icons + 1 maskable variant for Android adaptive icons."""
+    base = (base_url or "").rstrip("/")
+    manifest = {
+        "name": PODCAST_TITLE,
+        "short_name": "助眠电台",
+        "description": PODCAST_DESC,
+        "start_url": "./",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#06061a",
+        "theme_color": "#7c6ff7",
+        "lang": "zh-CN",
+        "icons": [
+            {
+                "src": "icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "icons/icon-maskable-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+        "categories": ["health", "lifestyle", "entertainment"],
+    }
+    return json.dumps(manifest, ensure_ascii=False, indent=2)
+
+
+def generate_service_worker() -> str:
+    """Service worker: caches app shell for offline-first experience.
+
+    Strategy:
+    - On install: pre-cache core navigational pages + static assets
+    - On fetch: stale-while-revalidate for HTML pages, cache-first for icons
+    - Audio/video bypasses cache (too large; browser handles range requests)
+    - Version-bump by changing CACHE_NAME invalidates old caches"""
+    return """// Service worker for 助眠电台 · offline app-shell caching
+const CACHE_VERSION = 'v1';
+const CACHE_NAME = `bedtime-${CACHE_VERSION}`;
+const APP_SHELL = [
+  './',
+  'index.html',
+  'about.html',
+  'faq.html',
+  'themes.html',
+  'stats.html',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      // best-effort: failing fetches don't block install
+      return Promise.allSettled(APP_SHELL.map(u => cache.add(u)));
+    }).then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  // Purge old caches on activation
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(
+      keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+    )).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  // Only handle GET
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  // Bypass audio/video (too large, let browser range-request handle it)
+  if (/\\.(mp3|wav|ogg|mp4|m4a|webm)$/i.test(url.pathname)) return;
+  // Third-party requests (analytics / fonts / etc.): let through
+  if (url.origin !== location.origin) return;
+
+  // Stale-while-revalidate: return cached immediately, update in background
+  event.respondWith(
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(req);
+      const networkPromise = fetch(req).then((res) => {
+        // Only cache successful basic responses
+        if (res.ok && res.type === 'basic') {
+          cache.put(req, res.clone());
+        }
+        return res;
+      }).catch(() => cached);  // offline fallback
+      return cached || networkPromise;
+    })
+  );
+});
+"""
 
 
 def generate_episodes_manifest(episodes: list[dict], base_url: str) -> str:
@@ -1219,6 +1343,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
     <meta name="twitter:image" content="{_esc(og_image)}">
     <script type="application/ld+json">{json.dumps(jsonld_ep, ensure_ascii=False)}</script>
     {breadcrumb_jsonld}
+    {_pwa_head("../")}
     {analytics_head}
     <style>
     :root {{
@@ -1771,6 +1896,7 @@ def generate_theme_page(theme_name: str, theme_cfg: dict, episodes: list[dict],
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
     {breadcrumb_jsonld}
+    {_pwa_head("../")}
     {analytics_head}
     <style>
     :root {{
@@ -1953,6 +2079,7 @@ def generate_themes_hub(monetization: dict, base_url: str) -> str:
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
     {breadcrumb_jsonld}
+    {_pwa_head("")}
     {analytics_head}
     <style>
     :root {{
@@ -2085,6 +2212,7 @@ def generate_category_page(cat_key: str, cat_cfg: dict, episodes: list[dict],
     <meta name="twitter:image" content="{_esc(og_image)}">
     <link rel="alternate" type="application/rss+xml" title="{_esc(label)} RSS" href="{_esc(cat_feed_rel)}">
     {breadcrumb_jsonld}
+    {_pwa_head("../")}
     {analytics_head}
     <style>
     :root {{
@@ -2330,6 +2458,7 @@ def generate_stats_page(episodes: list[dict], monetization: dict, base_url: str)
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
     {breadcrumb_jsonld}
+    {_pwa_head("")}
     {analytics_head}
     <style>
     :root {{
@@ -2575,6 +2704,7 @@ def generate_faq_page(monetization: dict, base_url: str) -> str:
     <meta name="twitter:image" content="{_esc(og_image)}">
     <script type="application/ld+json">{json.dumps(faq_jsonld, ensure_ascii=False)}</script>
     {breadcrumb_jsonld}
+    {_pwa_head("")}
     {analytics_head}
     <style>
     :root {{
@@ -2735,6 +2865,7 @@ def generate_about_page(monetization: dict, base_url: str) -> str:
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{_esc(og_image)}">
     {breadcrumb_jsonld}
+    {_pwa_head("")}
     {analytics_head}
     <style>
     :root {{
@@ -3515,6 +3646,13 @@ def generate_html(episodes: list[dict], monetization: dict | None = None, base_u
 
     {_NEWSLETTER_JS}
 
+    // --- Register service worker for PWA offline support ---
+    if ('serviceWorker' in navigator) {{
+      window.addEventListener('load', () => {{
+        navigator.serviceWorker.register('sw.js').catch(() => {{}});
+      }});
+    }}
+
     // --- Starfield ---
     (function() {{
       const c = document.getElementById('stars');
@@ -3862,6 +4000,24 @@ def main():
         generate_episodes_manifest(episodes, args.base_url), encoding="utf-8"
     )
     print(f"[OK] episodes.json → {SITE_DIR / 'episodes.json'}")
+
+    # PWA: manifest + service worker + icons
+    (SITE_DIR / "manifest.webmanifest").write_text(
+        generate_pwa_manifest(args.base_url), encoding="utf-8"
+    )
+    (SITE_DIR / "sw.js").write_text(generate_service_worker(), encoding="utf-8")
+    if _covers and _covers.available():
+        icons_dir = SITE_DIR / "icons"
+        icons_dir.mkdir(exist_ok=True)
+        if not (icons_dir / "icon-192.png").is_file():
+            _covers.generate_pwa_icon(icons_dir / "icon-192.png", size=192)
+        if not (icons_dir / "icon-512.png").is_file():
+            _covers.generate_pwa_icon(icons_dir / "icon-512.png", size=512)
+        if not (icons_dir / "icon-maskable-512.png").is_file():
+            _covers.generate_pwa_icon(icons_dir / "icon-maskable-512.png", size=512, maskable=True)
+        print(f"[OK] PWA manifest + sw.js + 3 icons → {SITE_DIR}")
+    else:
+        print(f"[OK] PWA manifest + sw.js（图标跳过：Pillow 未装）→ {SITE_DIR}")
 
     print(f"\n共 {len(episodes)} 期节目已发布。")
 

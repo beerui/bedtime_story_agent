@@ -244,6 +244,66 @@ def generate_home_cover(out_path: Path, tagline: str = "每晚 10 分钟 · AI �
     return True
 
 
+def generate_pwa_icon(out_path: Path, size: int = 512, maskable: bool = False) -> bool:
+    """Generate a square PWA icon. When maskable=True, leaves extra padding so
+    the icon survives being cropped to various round/square masks on different
+    devices (PWA maskable icon spec)."""
+    if not _HAS_PIL:
+        return False
+    rng = random.Random(_seed_from("pwa-icon"))
+    # Diagonal gradient background
+    img = Image.new("RGB", (size, size), (6, 6, 26))
+    px = img.load()
+    base_hue = 260 / 360.0
+    warm_hue = 40 / 360.0
+    for y in range(size):
+        for x in range(size):
+            t = (x + y) / (size * 2)
+            c1 = _hsl_to_rgb(base_hue, 0.4, 0.18)
+            c2 = _hsl_to_rgb(warm_hue, 0.5, 0.22)
+            r = int(c1[0] * (1 - t) + c2[0] * t)
+            g = int(c1[1] * (1 - t) + c2[1] * t)
+            b = int(c1[2] * (1 - t) + c2[2] * t)
+            px[x, y] = (r, g, b)
+
+    draw = ImageDraw.Draw(img, "RGBA")
+    # Stars
+    for _ in range(int(size / 20)):
+        cx = rng.randint(0, size - 1)
+        cy = rng.randint(0, size - 1)
+        rr = rng.randint(1, max(2, size // 200))
+        alpha = rng.randint(80, 200)
+        draw.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=(255, 255, 255, alpha))
+
+    # Accent arcs bottom-right
+    draw.ellipse([size * 0.55, size * 0.55, size * 1.05, size * 1.05],
+                 fill=(124, 111, 247, 45))
+    draw.ellipse([size * 0.7, size * 0.7, size * 1.05, size * 1.05],
+                 fill=(240, 194, 127, 30))
+
+    # Centered Chinese character. Maskable icons need safe zone (~10% padding)
+    safe_ratio = 0.75 if maskable else 0.88
+    char = "眠"  # "sleep" — single iconic character
+    font_size = int(size * safe_ratio * 0.72)
+    font = _load_font(font_size)
+    try:
+        bbox = draw.textbbox((0, 0), char, font=font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[0]
+        # Use metrics offset to visually center
+        cx = (size - tw) / 2 - bbox[0]
+        cy = (size - th) / 2 - bbox[1]
+    except AttributeError:
+        tw, th = draw.textsize(char, font=font)
+        cx = (size - tw) / 2
+        cy = (size - th) / 2
+    draw.text((cx, cy), char, font=font, fill=(240, 240, 250, 255))
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path, "PNG", optimize=True)
+    return True
+
+
 if __name__ == "__main__":
     # smoke test
     import sys
