@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-04-17] ID3 章节嵌入：章节跨端（Apple Podcasts / Pocket Casts）可见 (audio_tags.py + publish.py + requirements)
+**动因**: 上轮加的 HTML 章节只在网页上能用。但真正听众在 Apple Podcasts / Spotify / Pocket Casts / Overcast 上听——这些才是高转化渠道（一键订阅）。没有跨端章节 = 专业度不到位，订阅了也不会买会员
+**实现**:
+1. 新增 `audio_tags.py`：用 mutagen 写 ID3v2.4 基础元数据（TIT2/TPE1/TALB/TCON/COMM/TYER）+ CHAP 章节帧 + CTOC 目录帧。重跑幂等：覆盖前清空已有 CHAP:/CTOC: keys 避免重复
+2. `publish.py deploy_audio()` 在复制音频后调用 `embed_episode_metadata`：用 `extract_chapters(story, srt)` 拿到 chapter 列表，塞进 ID3；标题用 `ep['title']`（metadata.json 的发布标题），作者用 `PODCAST_AUTHOR`，简介用 `description` 前 500 字，年份从 timestamp
+3. 覆盖语义：只在 `needs_copy=True` 时重写 ID3（幂等 + 节省 CPU）；老期无 SRT 时 chapters=None，只写基础元数据不写章节
+4. Graceful degradation：mutagen 未安装时 `_audio_tags.available()` 返回 False，publish.py 跳过 ID3 步骤，不影响其他产出
+5. requirements.txt 加 `mutagen>=1.47.0`；Actions workflow 已经 `pip install -r requirements.txt` 会自动装
+**验证**: 22 个 MP3 全部写入 ID3 基础元数据；19 个新期（有 SRT）写入 3 个 CHAP frame + 1 个 CTOC；mutagen 读回验证：`CHAP:ch000 引入 — 0.0s → 38.4s`、`CHAP:ch001 深入 — 38.4s → 84.0s`、`CHAP:ch002 尾声 — 84.0s → 133.8s`；Title/Artist 正确
+**下一步**:
+- 苹果 Podcasts 支持章节图片（CHAP frame 里可以塞 APIC），可以把 OG 封面按章节变体嵌入——但优先级低
+- ID3 的 chapter 名目前是阶段标签（引入/深入/尾声），engine.py 可以在生成时记录每段的具体主题（比如 AI 焦虑的「承认焦虑→具身化→消融」），让章节名更具体
+- 目前每次 `publish.py --copy-audio` 都会在复制时重写 ID3，某些 podcast 客户端 cache 了旧版本需要刷新才能看到新章节
+
 ## [2026-04-17] 章节导航：把 [阶段：X] 标记变可点击时间戳 (publish.py)
 **动因**: 每期脚本有 [阶段：引入/深入/尾声] 三段，韵律引擎按此切换速度/音量/停顿——但听众没有任何入口跳到自己想重听的那一段。复听用户是转化打赏/订阅的主力，没有章节导航等于让他们每次都从头开始
 **实现**:

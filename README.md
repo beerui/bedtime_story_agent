@@ -9,7 +9,7 @@
 1. **AI 写稿（含心理锚点）** — 三轮 LLM 生成（心理学大纲 → 口播稿 → 去 AI 腔润色），主题的 `pain_point/technique/emotional_target` 元数据直接注入 prompt，LLM 有明确心理目标；质量评估采用 5 维 100 分制（含「痛点对齐」维度），低分自动重写。
 2. **韵律弧线配音** — 全局 speed/volume/pause 曲线，从正常语速渐进到极缓极轻，模拟真人催眠节奏。
 3. **BGM 混音 + 双耳节拍（可选）** — AI 选曲 + Alpha→Theta→Delta 渐变双耳拍，输出可直接发布的成品 MP3。
-4. **站点产出** — 每期独立 SEO 页（完整文稿 + OG 封面 + PodcastEpisode schema + 上/下集导航 + 相关推荐） + 首页订阅按钮组（Apple Podcasts / Spotify / 小宇宙 / RSS 等） + sitemap/robots/404。
+4. **站点产出** — 每期独立 SEO 页（完整文稿 + OG 封面 + PodcastEpisode schema + 上/下集导航 + 相关推荐 + 章节跳转） + 首页订阅按钮组（Apple Podcasts / Spotify / 小宇宙 / RSS 等） + 分类着陆页 + sitemap/robots/404 + MP3 内嵌 ID3 章节（Apple Podcasts 等播客 App 跨端可见）。
 5. **自动化部署** — GitHub Actions 每日 cron 生产一期 + 推 `content` 分支存音频 + 发布到 GitHub Pages。
 
 ```
@@ -116,7 +116,8 @@ engine.py         # 生产引擎（文本/语音/图像/视频/混音），promp
 prosody.py        # 韵律弧线引擎
 batch.py          # 批量生产 CLI（按主题 ideal_duration_min 自动调字数）
 covers.py         # OG 社交分享封面生成（Pillow，1200x630）
-publish.py        # 站点生成（首页 + 单期页 + sitemap + RSS + 封面 + 订阅按钮）
+audio_tags.py     # ID3 元数据 + CHAP 章节嵌入（mutagen，让 Apple Podcasts 等看到章节）
+publish.py        # 站点生成（首页 + 单期页 + 分类页 + sitemap + RSS + 封面 + 订阅按钮 + 章节）
 deploy.sh         # 一键推 gh-pages 分支
 dedup.py          # 内容去重
 main.py           # 交互式 CLI（完整视觉管线）

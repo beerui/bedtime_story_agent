@@ -31,6 +31,11 @@ except Exception:
     _covers = None
 
 try:
+    import audio_tags as _audio_tags
+except Exception:
+    _audio_tags = None
+
+try:
     from config import THEMES as _THEMES, THEME_CATEGORIES as _THEME_CATEGORIES
 except Exception:
     _THEMES = {}
@@ -190,16 +195,38 @@ def scan_episodes(outputs_dir: Path) -> list[dict]:
 def deploy_audio(episodes: list[dict], site_dir: Path) -> None:
     """Copy all episode audio into site/audio/ and set ep['site_audio'] to the
     relative path inside site/. This makes the site self-contained — deployable
-    to GitHub Pages / Vercel / Netlify without needing outputs/ alongside."""
+    to GitHub Pages / Vercel / Netlify without needing outputs/ alongside.
+
+    Also embeds ID3 tags + CHAP chapters (if mutagen installed) so podcast apps
+    like Apple Podcasts / Pocket Casts / Overcast can show chapter markers."""
     audio_out = site_dir / "audio"
     audio_out.mkdir(parents=True, exist_ok=True)
+    tagged = 0
     for ep in episodes:
         dest_name = f"{ep['folder']}.mp3"
         dest = audio_out / dest_name
         src = Path(ep["audio_abs"])
-        if not dest.is_file() or dest.stat().st_mtime < src.stat().st_mtime:
+        needs_copy = not dest.is_file() or dest.stat().st_mtime < src.stat().st_mtime
+        if needs_copy:
             shutil.copy2(src, dest)
         ep["site_audio"] = f"audio/{dest_name}"
+
+        # Embed ID3 tags + chapters once per (re)copied file
+        if needs_copy and _audio_tags and _audio_tags.available():
+            chapters = extract_chapters(ep.get("draft_full", ""), ep.get("srt", ""))
+            ok = _audio_tags.embed_episode_metadata(
+                str(dest),
+                title=ep.get("title") or ep.get("theme") or "助眠故事",
+                artist=PODCAST_AUTHOR,
+                album=PODCAST_TITLE,
+                comment=(ep.get("description") or "")[:500],
+                year=ep["timestamp"].strftime("%Y"),
+                chapters=chapters or None,
+            )
+            if ok:
+                tagged += 1
+    if tagged:
+        print(f"[OK] ID3 标签 + 章节嵌入 × {tagged} 个 MP3")
 
 
 def resolve_html_audio(ep: dict) -> str:
