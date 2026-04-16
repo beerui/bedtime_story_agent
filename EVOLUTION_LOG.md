@@ -4,6 +4,22 @@
 
 ---
 
+## [2026-04-17] 单期播完自动续播下一集：睡前连听不断档 (publish.py)
+**动因**: 助眠场景典型是"听着听着睡着"——用户播到一半就睡了，醒来发现只播了一期就结束了，后面 7 小时无声。现在加自动续播：一期播完 10 秒倒计时后跳转下一集并自动播放，用户想阻止就点取消
+**实现**:
+1. 单期页 `<div id="autoadvance" hidden>` 底部浮卡（紫金边框 + backdrop-blur），含"下一集"标签 + 标题 + 10 秒倒计时 + 取消按钮
+2. `audio.ended` 时如果有 next_ep，调 `scheduleAutoAdvance(nextUrl, nextTitle)` 显示浮卡 + setInterval 每秒更新
+3. 到期自动 `location.href = nextUrl + '#autoplay'`
+4. 下一页加载时检测 `location.hash.includes('autoplay')` → 等 `loadedmetadata` 后 `autoEl.play()`
+5. 三个埋点事件：`Auto Advance Offered`（展示浮卡）/ `Auto Advance Taken`（10 秒自动跳转）/ `Auto Advance Cancelled`（用户点取消）——可分析"自动续播接受率"
+6. 浮卡 fade in 效果（translateY(20px) → 0 + opacity 0 → 1），取消后反向隐藏
+7. 无 next_ep 的期（只存在于当前是最新一期时）自动不生成续播逻辑
+**验证**: 单期页 7 处 scheduleAutoAdvance/autoadvance 相关代码；autoplay hash 检测在页头、续播函数在 JS 尾
+**下一步**:
+- 自动播放策略受浏览器限制——桌面 Chrome 通常 OK，iOS Safari 可能需要用户在当前 tab 已经互动过（通过本期播放过即算）；实测是否稳定需要真实设备
+- 可加"一直连播"开关保存 localStorage，禁用后每期播完安静停止
+- 可加"播完停 2 期"等模式（听完 2 期自动停）
+
 ## [2026-04-17] 每期 hero 场景图：用 Pollinations.ai 免费 AI 配图 (backfill_scenes.py + publish.py)
 **动因**: 22 期都用 `--audio-only` 生产，没有场景图。但 engine.py 本就有 `generate_multi_images` 通过 Pollinations.ai（免费，无需 API key）生成主题图的逻辑，只是没用上。场景图作为单期页 hero 视觉，会大大拉高页面"用心感"
 **实现**:

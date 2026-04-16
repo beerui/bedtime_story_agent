@@ -1726,6 +1726,44 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       opacity: 0; transition: opacity 0.3s; pointer-events: none;
     }}
     .toast.show {{ opacity: 1; }}
+    .autoadvance {{
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
+      max-width: 90vw; width: 360px;
+      background: linear-gradient(135deg, rgba(20,20,50,0.98), rgba(30,20,60,0.98));
+      border: 1px solid rgba(124,111,247,0.4);
+      border-radius: 14px; padding: 14px 18px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      opacity: 0; transition: all 0.35s ease;
+      pointer-events: none;
+    }}
+    .autoadvance.show {{
+      opacity: 1; transform: translateX(-50%) translateY(0);
+      pointer-events: auto;
+    }}
+    .aa-label {{
+      font-size: 0.68rem; color: var(--warm);
+      letter-spacing: 0.18em; text-transform: uppercase;
+      margin-bottom: 4px;
+    }}
+    .aa-title {{
+      font-size: 0.92rem; font-weight: 600; color: var(--text);
+      margin-bottom: 10px; line-height: 1.4;
+      overflow: hidden; text-overflow: ellipsis;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }}
+    .aa-row {{
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.78rem;
+    }}
+    .aa-countdown {{ color: var(--dim); font-variant-numeric: tabular-nums; }}
+    .aa-countdown #aaSeconds {{ color: var(--accent); font-weight: 600; }}
+    .aa-cancel {{
+      background: none; border: 1px solid var(--border);
+      color: var(--dim); padding: 4px 12px; border-radius: 14px;
+      font-size: 0.72rem; cursor: pointer; font-family: inherit;
+    }}
+    .aa-cancel:hover {{ color: var(--text); border-color: var(--accent); }}
     @media (max-width: 600px) {{
       .wrap {{ padding: 24px 16px 80px; }}
       h1 {{ font-size: 1.3rem; }}
@@ -1812,6 +1850,14 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
       </div>
 
       <div class="toast" id="toast">已复制</div>
+      <div class="autoadvance" id="autoadvance" hidden>
+        <div class="aa-label">下一集</div>
+        <div class="aa-title" id="aaTitle"></div>
+        <div class="aa-row">
+          <div class="aa-countdown"><span id="aaSeconds">10</span> 秒后自动播放</div>
+          <button class="aa-cancel" onclick="cancelAutoAdvance()">✕ 取消</button>
+        </div>
+      </div>
       <script>
       const SHARE_TEXTS = {json.dumps(share_texts, ensure_ascii=False)};
 
@@ -1857,6 +1903,47 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
           t.classList.add('show');
           setTimeout(() => t.classList.remove('show'), 1400);
         }});
+      }}
+
+      // --- Auto-advance to next episode (sleep-mode friendly) ---
+      let _aaTimer = null;
+      function scheduleAutoAdvance(nextUrl, nextTitle) {{
+        const card = document.getElementById('autoadvance');
+        const titleEl = document.getElementById('aaTitle');
+        const secEl = document.getElementById('aaSeconds');
+        if (!card || !titleEl || !secEl) return;
+        titleEl.textContent = nextTitle || '';
+        let remain = 10;
+        secEl.textContent = remain;
+        card.hidden = false;
+        card.classList.add('show');
+        if (window.trackEvent) window.trackEvent('Auto Advance Offered', {{ next: nextTitle }});
+        _aaTimer = setInterval(() => {{
+          remain--;
+          secEl.textContent = remain;
+          if (remain <= 0) {{
+            clearInterval(_aaTimer);
+            _aaTimer = null;
+            if (window.trackEvent) window.trackEvent('Auto Advance Taken', {{ next: nextTitle }});
+            location.href = nextUrl + '#autoplay';
+          }}
+        }}, 1000);
+      }}
+      function cancelAutoAdvance() {{
+        if (_aaTimer) {{ clearInterval(_aaTimer); _aaTimer = null; }}
+        const card = document.getElementById('autoadvance');
+        if (card) {{ card.classList.remove('show'); card.hidden = true; }}
+        if (window.trackEvent) window.trackEvent('Auto Advance Cancelled');
+      }}
+
+      // Auto-play on page load if arrived via #autoplay hash
+      if (location.hash.includes('autoplay')) {{
+        const autoEl = document.querySelector('.player audio');
+        if (autoEl) {{
+          const onReady = () => autoEl.play().catch(() => {{}});
+          if (autoEl.readyState >= 2) onReady();
+          else autoEl.addEventListener('loadedmetadata', onReady, {{ once: true }});
+        }}
       }}
 
       // --- Chapter navigation ---
@@ -1933,12 +2020,13 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
             }}));
           }} catch (e) {{}}
         }});
-        // Clear on completion
+        // Clear on completion + queue auto-advance to next episode
         audioEl.addEventListener('ended', () => {{
           try {{
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
             if (saved && saved.ep_id === EP_ID) localStorage.removeItem(STORAGE_KEY);
           }} catch (e) {{}}
+          {f"scheduleAutoAdvance({json.dumps(_episode_slug(next_ep) + '.html', ensure_ascii=False)}, {json.dumps(next_ep['title'], ensure_ascii=False)});" if next_ep else "// no next episode — no auto-advance"}
         }});
 
         // --- Media Session API (iOS lock screen / Android notification / car BT) ---
