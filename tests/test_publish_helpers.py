@@ -284,5 +284,74 @@ class TestEpisodeSlugAndHref(unittest.TestCase):
         self.assertEqual(publish._episode_href(ep), "episodes/Batch_abc.html")
 
 
+class TestBuildShareTexts(unittest.TestCase):
+    def test_returns_four_platform_keys(self):
+        ep = _mock_episode("Batch_x", "午夜慢车", "标题")
+        texts = publish.build_share_texts(ep, {})
+        self.assertEqual(set(texts.keys()), {"x", "weibo", "xhs", "wechat"})
+
+    def test_uses_theme_metadata(self):
+        ep = _mock_episode("Batch_x", "AI焦虑夜_数字排毒", "AI 焦虑那晚")
+        theme_cfg = {
+            "pain_point": "被 AI 取代焦虑",
+            "technique": "具身化锚定：用触觉拉回身体",
+            "emotional_target": "我是有身体的人",
+        }
+        texts = publish.build_share_texts(ep, theme_cfg)
+        self.assertIn("被 AI 取代焦虑", texts["x"])
+        self.assertIn("被 AI 取代焦虑", texts["weibo"])
+        self.assertIn("被 AI 取代焦虑", texts["xhs"])
+        self.assertIn("被 AI 取代焦虑", texts["wechat"])
+        # XHS gets full technique (not truncated at 「：」 separator)
+        self.assertIn("具身化锚定：用触觉拉回身体", texts["xhs"])
+        # XHS has emotional_target (others don't)
+        self.assertIn("我是有身体的人", texts["xhs"])
+
+    def test_xhs_has_emoji_and_hashtags(self):
+        ep = _mock_episode("Batch_x", "午夜慢车", "标题")
+        texts = publish.build_share_texts(ep, {"pain_point": "p", "technique": "t"})
+        self.assertIn("✨", texts["xhs"])
+        self.assertIn("🧠", texts["xhs"])
+        self.assertIn("🌙", texts["xhs"])
+        self.assertIn("#助眠", texts["xhs"])
+        self.assertIn("#午夜慢车", texts["xhs"])
+
+    def test_weibo_has_topic_hashtag(self):
+        ep = _mock_episode("Batch_x", "午夜慢车", "标题")
+        texts = publish.build_share_texts(ep, {"pain_point": "p"})
+        self.assertTrue(texts["weibo"].startswith("#助眠电台#"))
+
+    def test_technique_fallback_when_missing(self):
+        ep = _mock_episode("Batch_x", "午夜慢车", "标题")
+        texts = publish.build_share_texts(ep, {})  # no technique
+        # "心理学助眠技术" is the fallback in build_share_texts
+        self.assertIn("心理学助眠技术", texts["x"])
+
+
+class TestPwaHead(unittest.TestCase):
+    def test_root_prefix_emits_correct_hrefs(self):
+        out = publish._pwa_head("")
+        self.assertIn('href="manifest.webmanifest"', out)
+        self.assertIn('href="icons/icon-192.png"', out)
+
+    def test_nested_prefix_prepends_double_dot(self):
+        out = publish._pwa_head("../")
+        self.assertIn('href="../manifest.webmanifest"', out)
+        self.assertIn('href="../icons/icon-192.png"', out)
+
+    def test_contains_required_meta(self):
+        out = publish._pwa_head("")
+        # The 5 critical PWA-related tags
+        self.assertIn('rel="manifest"', out)
+        self.assertIn('name="theme-color"', out)
+        self.assertIn('name="apple-mobile-web-app-capable"', out)
+        self.assertIn('name="apple-mobile-web-app-title"', out)
+        self.assertIn('rel="apple-touch-icon"', out)
+
+    def test_theme_color_matches_brand(self):
+        out = publish._pwa_head("")
+        self.assertIn("#7c6ff7", out)  # accent purple — site brand
+
+
 if __name__ == "__main__":
     unittest.main()

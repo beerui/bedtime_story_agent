@@ -4,6 +4,24 @@
 
 ---
 
+## [2026-04-17] 新 helpers 单测覆盖：build_share_texts + _pwa_head (test_publish_helpers.py)
+**动因**: 过去 10 轮新加的两个 helper 没测试覆盖——build_share_texts（每期社交文案生成）和 _pwa_head（全站 PWA meta 注入）。这是 52 → 61 条防护网的补完
+**实现**:
+1. `TestBuildShareTexts` 5 用例：
+   - 返回 4 个平台键（x/weibo/xhs/wechat）
+   - 使用 theme 元数据（pain_point 在 4 处都出现，emotional_target 仅 XHS）
+   - XHS 含 emoji (✨🧠🌙) + 5 个 hashtag（#助眠 + #{theme}）
+   - 微博以 `#助眠电台#` 话题开头
+   - 缺 technique 时 fallback 到「心理学助眠技术」
+2. `TestPwaHead` 4 用例：
+   - 空 prefix → `href="manifest.webmanifest"` `href="icons/icon-192.png"`
+   - `../` prefix → `href="../manifest.webmanifest"` 等
+   - 含 5 个关键 meta（manifest/theme-color/apple-mobile-web-app-capable/apple-mobile-web-app-title/apple-touch-icon）
+   - theme-color 是 `#7c6ff7`（品牌紫）
+3. 累计：publish_helpers.py 24 → 33，全量 52 → 61 测试
+**验证**: 61/61 通过，0.032s 跑完
+**价值**: 过去经常跑路迭代中 build_share_texts 和 _pwa_head 都在共用代码路径上，一个小改可能同时破坏多个页面。现在有明确契约
+
 ## [2026-04-17] 社交文案导出：22 期 × 4 平台的批量推广物料 (publish.py)
 **动因**: 单期页已有 4 平台预填分享文案（JS 里），但用户**批量推广时打不开 22 个页面分别复制**——排期发帖需要所有期的文案集中成文件
 **实现**:
