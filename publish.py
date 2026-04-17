@@ -1163,6 +1163,30 @@ def _breadcrumb_jsonld(items: list[tuple[str, str]]) -> str:
     return f'<script type="application/ld+json">{json.dumps(data, ensure_ascii=False)}</script>'
 
 
+def build_share_texts(ep: dict, theme_cfg: dict | None = None) -> dict[str, str]:
+    """Build platform-tailored share text for one episode.
+
+    Same logic used for both episode-page inline JS and offline social-post
+    export (site/share/{folder}.json). Keeping this in one place prevents
+    the two copies drifting apart."""
+    theme_cfg = theme_cfg or {}
+    pain_for_share = (theme_cfg.get("pain_point", "") or "").strip()
+    tech_for_share = (theme_cfg.get("technique", "") or "").split("：")[0].strip() or "心理学助眠技术"
+    return {
+        "x": f"{ep['title']}｜{PODCAST_TITLE}\n{pain_for_share}—用 {tech_for_share} 引导。",
+        "weibo": f"#助眠电台# 【{ep['theme']}】{ep['title']}\n{pain_for_share}\n用{tech_for_share}——{ep['word_count']}字 · {_fmt_duration(ep['duration'])}",
+        "xhs": (
+            f"【{ep['theme']}】{ep['title']}\n\n"
+            f"✨ 此刻的感受：{pain_for_share}\n"
+            f"🧠 使用的技术：{theme_cfg.get('technique', '助眠冥想')}\n"
+            f"🌙 听后的状态：{theme_cfg.get('emotional_target', '放松入眠')}\n\n"
+            f"时长 {_fmt_duration(ep['duration'])}，AI 生成但心理学锚点手工设计。"
+            f"\n\n#助眠 #失眠 #冥想 #{ep['theme']} #心理学"
+        ),
+        "wechat": f"{ep['title']} | {PODCAST_TITLE}\n{pain_for_share}",
+    }
+
+
 def extract_chapters(story_text: str, srt_text: str, title_overrides: dict | None = None) -> list[dict]:
     """Build chapter list by correlating [阶段：X] markers in the story with
     SRT cue timestamps. Returns [{title, start_sec, end_sec}]. Empty list if
@@ -1356,21 +1380,7 @@ def generate_episode_page(ep: dict, monetization: dict, base_url: str, total_eps
 
     # Pre-filled share copy per platform — empowers fans to 1-click share with
     # platform-appropriate formatting (short for X/Weibo, long for XHS).
-    pain_for_share = (theme_cfg.get("pain_point", "") or "").strip()
-    tech_for_share = (theme_cfg.get("technique", "") or "").split("：")[0].strip() or "心理学助眠技术"
-    share_texts = {
-        "x": f"{ep['title']}｜{PODCAST_TITLE}\n{pain_for_share}—用 {tech_for_share} 引导。",
-        "weibo": f"#助眠电台# 【{ep['theme']}】{ep['title']}\n{pain_for_share}\n用{tech_for_share}——{ep['word_count']}字 · {_fmt_duration(ep['duration'])}",
-        "xhs": (
-            f"【{ep['theme']}】{ep['title']}\n\n"
-            f"✨ 此刻的感受：{pain_for_share}\n"
-            f"🧠 使用的技术：{theme_cfg.get('technique', '助眠冥想')}\n"
-            f"🌙 听后的状态：{theme_cfg.get('emotional_target', '放松入眠')}\n\n"
-            f"时长 {_fmt_duration(ep['duration'])}，AI 生成但心理学锚点手工设计。"
-            f"\n\n#助眠 #失眠 #冥想 #{ep['theme']} #心理学"
-        ),
-        "wechat": f"{ep['title']} | {PODCAST_TITLE}\n{pain_for_share}",
-    }
+    share_texts = build_share_texts(ep, theme_cfg)
 
     # Chapters — one per [阶段：X] marker. Renders as clickable navigation below
     # the player so returning listeners can jump to e.g. the body-scan section.
@@ -4715,6 +4725,38 @@ def main():
         generate_episodes_manifest(episodes, args.base_url), encoding="utf-8"
     )
     print(f"[OK] episodes.json → {SITE_DIR / 'episodes.json'}")
+
+    # Social posts export — per-episode + aggregated. Creator can copy-paste
+    # these when scheduling promotion on Twitter / Weibo / XHS / WeChat.
+    share_dir = SITE_DIR / "share"
+    share_dir.mkdir(exist_ok=True)
+    all_posts = {"x": [], "weibo": [], "xhs": [], "wechat": []}
+    for ep in episodes:
+        theme_cfg = (_THEMES or {}).get(ep["theme"]) or {}
+        texts = build_share_texts(ep, theme_cfg)
+        ep_url = f"{args.base_url.rstrip('/')}/episodes/{ep['folder']}.html" if args.base_url else f"episodes/{ep['folder']}.html"
+        per_ep = {
+            platform: {"text": t, "url": ep_url}
+            for platform, t in texts.items()
+        }
+        (share_dir / f"{ep['folder']}.json").write_text(
+            json.dumps({"episode": ep["folder"], "title": ep["title"], "posts": per_ep},
+                       ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        for platform, t in texts.items():
+            all_posts[platform].append({
+                "episode": ep["folder"],
+                "title": ep["title"],
+                "published_at": ep["timestamp"].strftime("%Y-%m-%d"),
+                "text": t,
+                "url": ep_url,
+            })
+    (share_dir / "all-posts.json").write_text(
+        json.dumps(all_posts, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+    print(f"[OK] 社交文案 × {len(episodes)} → {share_dir}（{sum(len(v) for v in all_posts.values())} 条 × 4 平台）")
 
     # PWA: manifest + service worker + icons
     (SITE_DIR / "manifest.webmanifest").write_text(

@@ -4,6 +4,25 @@
 
 ---
 
+## [2026-04-17] 社交文案导出：22 期 × 4 平台的批量推广物料 (publish.py)
+**动因**: 单期页已有 4 平台预填分享文案（JS 里），但用户**批量推广时打不开 22 个页面分别复制**——排期发帖需要所有期的文案集中成文件
+**实现**:
+1. `build_share_texts(ep, theme_cfg)` 从 `generate_episode_page` 抽出为独立函数，返回 `{x, weibo, xhs, wechat}` 预填文本——页内 JS 和静态导出共用
+2. `publish.main` 新增 `site/share/` 目录：
+   - `{folder}.json` × 22 每期一个：`{episode, title, posts: {x, weibo, xhs, wechat: {text, url}}}`
+   - `all-posts.json` 汇总：`{x: [22 posts], weibo: [...], xhs: [...], wechat: [...]}`——按平台分组，每条含 episode/title/published_at/text/url
+3. URL 用 `--base-url` 拼绝对路径，可直接粘贴到社交平台
+**验证**: 
+- 23 个文件生成（22 单期 + 1 汇总）
+- 每期 4 平台文本长度合理（X 91 字，微博 91 字，XHS 185 字含 emoji+hashtag，微信 69 字）
+- all-posts.json 每平台 22 条
+- 52 测试仍通过（share_texts 抽取不破坏页内 JS）
+**使用场景**:
+- 用户拿 xhs 字段的内容批量排期发小红书——每次复制 185 字的完整文案带 hashtag
+- 用 twitter 字段自动发推（配合 X scheduling 工具）
+- 微博 运营者把 22 条一次性导入 Buffer / Later 等工具
+- 变现/合作方拿 all-posts.json 作营销物料清单
+
 ## [2026-04-17] 隐私政策 + 使用条款 + newsletter consent 披露 (publish.py)
 **动因**: Newsletter form 收邮箱但没隐私政策页。GDPR（欧盟）/ 个人信息保护法（中国）/ Apple App Store 都要求收集邮箱必须披露用途。没有这两页属于法律雷区，尤其中文市场对数据合规审查变严
 **实现**:
