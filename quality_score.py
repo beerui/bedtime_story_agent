@@ -125,6 +125,8 @@ def scan_outputs(outputs_dir: str) -> list:
                 with open(p, 'r', encoding='utf-8') as f:
                     text = f.read()
                 theme = re.sub(r'^Batch_\d{8}_\d{6}_', '', d)
+                theme = re.sub(r'^EVOLVED_\d{8}_\d{6}_', '', theme)
+                theme = re.sub(r'^REGEN_\d{8}_\d{6}_', '', theme)
                 theme = re.sub(r'_EP\d+$', '', theme)
                 if not theme or theme == 'TEST_RUN':
                     continue
