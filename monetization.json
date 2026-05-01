@@ -1,0 +1,81 @@
+{
+  "_comment": "复制为 monetization.json 并填入真实链接，publish.py 会自动读取并在站点底部渲染变现板块。所有字段均可选；省略的块不会显示。",
+  "site_url": "https://beerui.github.io/bedtime_story_agent",
+  "brand_tagline": "每晚 10 分钟，被温柔的声音带入梦境",
+  "subscribe": {
+    "_comment": "各平台订阅链接。Apple Podcasts 可用 podcasts://你的feed.xml 协议直接唤起 App 订阅（需站点已部署且 RSS URL 可公网访问）。留空不会显示按钮，RSS 按钮始终显示",
+    "apple_podcasts_url": "",
+    "spotify_url": "",
+    "xiaoyuzhou_url": "",
+    "overcast_url": "",
+    "bilibili_url": "",
+    "hint": "订阅后每期新内容会自动推送到你的播客 App"
+  },
+  "donation": {
+    "enabled": true,
+    "label": "请我喝杯助眠茶",
+    "icon": "☕",
+    "url": "https://afdian.net/a/beerui",
+    "note": "如果它帮你睡着了，一杯茶钱就能让这个电台持续跑下去"
+  },
+  "sponsor_slot": {
+    "enabled": true,
+    "label": "本期赞助位",
+    "text": "这里等待你的品牌 · 助眠相关优先",
+    "url": "mailto:beerui@users.noreply.github.com?subject=助眠电台%20赞助合作"
+  },
+  "affiliates": {
+    "enabled": true,
+    "title": "听众睡得更好的小装备",
+    "disclaimer": "以下商品为联盟推广，通过链接购买不会让你多花钱，但会给电台一点补贴。",
+    "items": [
+      {
+        "title": "蒸汽热敷眼罩（40°C · 10 分钟）",
+        "desc": "睡前覆眼，热敷放松眼周肌肉",
+        "url": "https://s.click.taobao.com/替换为你的推广链接1",
+        "emoji": "👁️"
+      },
+      {
+        "title": "白噪音机（20 种自然声 · 定时）",
+        "desc": "床头常备，盖住室友/邻居的噪音",
+        "url": "https://s.click.taobao.com/替换为你的推广链接2",
+        "emoji": "🌊"
+      },
+      {
+        "title": "降噪硅胶耳塞（29dB · 久戴不痛）",
+        "desc": "搭配本电台使用效果翻倍",
+        "url": "https://s.click.taobao.com/替换为你的推广链接3",
+        "emoji": "🎧"
+      }
+    ]
+  },
+  "premium": {
+    "enabled": false,
+    "label": "会员专享 · 无 BGM 纯人声版",
+    "url": "https://beerui.github.io/bedtime_story_agent/premium",
+    "price_note": "¥9.9/月 · 解锁全部 13 个主题的纯人声长版"
+  },
+  "social": {
+    "wechat_mp": "",
+    "xiaohongshu": "",
+    "bilibili": "",
+    "contact_email": "hello@你的域名.com"
+  },
+  "analytics": {
+    "_comment": "三选一（或都留空不注入）。Plausible/Umami 隐私友好，GA4 功能最强但需要 cookie 条款",
+    "plausible_domain": "",
+    "umami_script_url": "",
+    "umami_website_id": "",
+    "google_analytics_id": ""
+  },
+  "newsletter": {
+    "_comment": "邮件订阅：任何接收 HTML form POST 的服务都行。常见：FormSubmit.co（免注册，POST 到 https://formsubmit.co/你@邮箱.com 会转发到邮箱）、FormSubmit 别名（https://formsubmit.co/el/xxxxxx 隐藏邮箱）、Buttondown（https://buttondown.email/api/emails/embed-subscribe/你的用户名）、Formspark（https://submit-form.com/FORM_ID）、Formspree（https://formspree.io/f/FORM_ID）。留空或 enabled=false 则表单不渲染",
+    "enabled": false,
+    "endpoint_url": "",
+    "title": "每周收到一封",
+    "description": "每周一封精选助眠内容 + 新期提醒，任何时候可取消。",
+    "button_label": "订阅",
+    "success_message": "订阅成功 · 请查收邮件确认"
+  }
+}
+
