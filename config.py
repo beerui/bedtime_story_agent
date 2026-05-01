@@ -223,7 +223,7 @@ THEMES = {
     "午夜慢车": {
         "story_prompt": "一列在午夜平稳行驶的绿皮火车，窗外是偶尔掠过的路灯和沉睡的田野。要求语言充满孤独但安全的氛围，带有催眠的节奏感，引导听众放下白天的焦虑，随着车厢的微微摇晃进入深度睡眠。",
         "image_prompt": "A cinematic vertical view from inside a dark, cozy sleeper train cabin at midnight, looking out the window at passing blurry lights, photorealistic, moody, relaxing, highly detailed.",
-        "bgm_file": "train_night.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "nature_relax",
         "pain_point": "脑子停不下来，越躺越清醒",
         "technique": "节律性外部刺激（车厢摇晃+哐当声）带动身体进入副交感状态",
@@ -234,7 +234,7 @@ THEMES = {
     "雨夜山中小屋": {
         "story_prompt": "一个人呆在深山里的木屋中，外面下着淅淅沥沥的秋雨，屋内有一盏暖黄色的台灯。要求文案极其注重感官描写（雨声、木头的气味、被子的温度），用词克制、慵懒，带有极强的安全感。",
         "image_prompt": "A cinematic vertical view looking out a rainy window from inside a dark, cozy wooden cabin, dim warm lamp light, raindrops on glass, moody, photorealistic, serene atmosphere.",
-        "bgm_file": "heavy_rain_roof.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "nature_relax",
         "pain_point": "外界太吵，想躲进一个只有自己的地方",
         "technique": "多感官包裹（雨声+木屋气味+被子温度）建立庇护感",
@@ -245,7 +245,7 @@ THEMES = {
     "深夜无人咖啡馆": {
         "story_prompt": "一家开在城市角落的深夜咖啡馆，外面下着小雪。你是唯一的客人，看着窗外偶尔经过的车辆。引导听众把脑海中繁杂的思绪像窗外的雪花一样慢慢沉淀下来。",
         "image_prompt": "A cinematic vertical view from inside a dark, empty late-night cafe looking out at a quiet snowy city street, warm indoor lighting contrasting with cold blue streetlights, photorealistic, lofi aesthetic.",
-        "bgm_file": "cafe_rain_lofi.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "nature_relax",
         "pain_point": "白天人多太累，想一个人安静待一会",
         "technique": "冷暖对比（外冷内暖）+ 比喻沉淀（思绪→雪花）",
@@ -256,7 +256,7 @@ THEMES = {
     "篝火与星空": {
         "story_prompt": "独自一人在空旷的峡谷里露营，面前是一堆燃烧的篝火，抬头是浩瀚的银河。要求语言深邃，通过对比宇宙的庞大与个人的渺小，帮助听众释然现实生活中的执念和压力。",
         "image_prompt": "A cinematic vertical view of a warm glowing campfire in a dark canyon, vast starry night sky above, hyper-realistic, majestic, deep and calming atmosphere.",
-        "bgm_file": "campfire_crickets.mp3",
+        "bgm_file": "fireplace.wav",
         "category": "nature_relax",
         "pain_point": "琐事压垮，急需把自己从小事里拔出来",
         "technique": "宇宙尺度对照（Cosmic Perspective）消解日常执念",
@@ -267,7 +267,7 @@ THEMES = {
     "深海独潜": {
         "story_prompt": "模拟一次极其缓慢、安全的深海下潜体验。随着光线慢慢变暗，周围只剩下自己平稳的呼吸声和偶尔游过的发光生物。加入身体扫描（Body Scan）的冥想引导，让听众感受身体各个部位的彻底放松和下沉。",
         "image_prompt": "A cinematic vertical underwater view descending into the deep ocean, faint bioluminescent creatures, dark tranquil blue waters, photorealistic, deeply calming and mysterious.",
-        "bgm_file": "scuba_breathing.mp3",
+        "bgm_file": "ocean_waves.wav",
         "category": "nature_relax",
         "pain_point": "身体绷着睡不着，需要被引导放松每一处",
         "technique": "Body Scan 躯体扫描 + 缓慢下潜隐喻身体沉入床垫",
@@ -282,7 +282,7 @@ THEMES = {
     "溪流落叶_认知解离": {
         "story_prompt": "基于心理学『认知解离』技术。引导听众想象自己坐在秋天宁静的溪水边。让听众把脑海中繁杂、焦虑的念头，想象成一片片落叶，轻轻放在溪水上，看着它们随波逐流、慢慢远去。语言极度舒缓、接纳，不评判任何情绪。",
         "image_prompt": "A cinematic vertical view of a tranquil forest stream in autumn, gentle water flow, golden and red leaves floating on the surface, soft lighting, photorealistic, deeply calming.",
-        "bgm_file": "gentle_stream.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "clinical_technique",
         "pain_point": "想东想西停不下来，负面念头反复纠缠",
         "technique": "ACT 认知解离（Cognitive Defusion）：把念头与自我分离",
@@ -293,7 +293,7 @@ THEMES = {
     "极光冰屋_安全岛": {
         "story_prompt": "基于心理学『安全岛』技术。听众正躺在冰岛全封闭的厚重玻璃穹顶屋里，外面是零下三十度的风雪，屋内是极其温暖的被窝和恒温。强调外面的一切压力、工作、他人都绝对无法进入这个空间。在这里，唯一需要做的事就是休息。",
         "image_prompt": "A cinematic vertical view from inside a cozy warm glass igloo, looking up at a spectacular green aurora borealis in the night sky, thick warm blankets in foreground, photorealistic, ultimate safe and cozy aesthetic.",
-        "bgm_file": "muffled_blizzard.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "clinical_technique",
         "pain_point": "有解不开的事，觉得自己随时会被什么击中",
         "technique": "Safe Place Imagery（安全岛意象）：创伤/焦虑情境下的心理庇护",
@@ -304,7 +304,7 @@ THEMES = {
     "阳光沙滩_自律训练": {
         "story_prompt": "基于心理学『自律训练法』与躯体扫描。听众正躺在傍晚余温未散的柔软沙滩上。使用极慢的语速，依次引导听众感受双脚、双腿、手臂、躯干像灌了铅一样沉重、完全陷入沙子里，并感受到夕阳照在皮肤上的微热感。彻底放弃对身体的控制。",
         "image_prompt": "A cinematic vertical view of a tranquil beach at late sunset, soft glowing warm light on the sand, point of view looking at the calm ocean horizon, highly detailed, peaceful.",
-        "bgm_file": "slow_ocean_waves.mp3",
+        "bgm_file": "ocean_waves.wav",
         "category": "clinical_technique",
         "pain_point": "四肢紧绷、肩颈僵硬，身体不放松没法睡",
         "technique": "Autogenic Training 自律训练 + 沉重/温暖暗示",
@@ -315,7 +315,7 @@ THEMES = {
     "夏日午睡_怀旧退行": {
         "story_prompt": "利用怀旧感引发心理放松。设定在一个无忧无虑的童年夏日午后，老风扇在转，知了在叫。暗示所有作业都已经写完，大人不在家，没有任何人会来催促你做任何事。给予听众'现在可以合法且彻底地浪费时间、安心睡去'的心理许可。",
         "image_prompt": "A cinematic vertical view of a dimly lit vintage room in summer, sunlight filtering through curtains, an old oscillating fan, nostalgic lofi aesthetic, deep relaxing shadows, photorealistic.",
-        "bgm_file": "old_fan_cicadas.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "clinical_technique",
         "pain_point": "成人责任太重，渴望卸下所有身份",
         "technique": "心理退行（Regression）：回到前责任期的放松状态",
@@ -330,7 +330,7 @@ THEMES = {
     "末班地铁_卸下伪装": {
         "story_prompt": "场景是深夜空荡荡的末班地铁。用第二人称'你'。描述车厢的摇晃、车窗玻璃上映出的疲惫面容。文案要替听众叹一口气，告诉他：'今天辛苦了，在这里你可以不用假装情绪稳定，不用回复任何人的消息。随着列车的行驶，把白天的烦恼都甩在身后吧。'",
         "image_prompt": "A cinematic vertical view from inside an empty subway train at night, warm dim lights, dark window reflecting city lights outside, lonely but peaceful atmosphere, photorealistic, lofi aesthetic.",
-        "bgm_file": "subway_ride_night.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "emotional_resonance",
         "pain_point": "假装了一天，想卸下表情",
         "technique": "共情叹息 + 第二人称亲密陪伴",
@@ -341,7 +341,7 @@ THEMES = {
     "天台吹风_人际抽离": {
         "story_prompt": "场景是深夜无人的公司天台或楼道。用第二人称。吐槽白天办公室里的假笑、毫无意义的寒暄和复杂的人际关系。然后话锋一转，引导听众感受此刻夜晚的微风：'不用讨好任何人，做个不合群的人也没关系。深呼吸，把那些乌烟瘴气都吐出去。'",
         "image_prompt": "A cinematic vertical view looking down from a high office building rooftop at night, glowing city lights below, dark moody foreground, solitary and peaceful, photorealistic.",
-        "bgm_file": "city_night_breeze.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "emotional_resonance",
         "pain_point": "社交疲惫，讨好累了",
         "technique": "吐槽-接纳-身体呼吸三段式情绪引导",
@@ -352,7 +352,7 @@ THEMES = {
     "下班关机_反击上下级": {
         "story_prompt": "场景是下班回到家，刚刚洗完一个热水澡。提到那个总是半夜发消息的领导，或是那些永远完不成的KPI。告诉听众：'工作只是谋生的工具，你的价值不需要由老板来定义。现在，关掉手机，不理会工作群的红点。你的私人时间，神圣不可侵犯。'",
         "image_prompt": "A cinematic vertical view of a cozy bedroom at night, a glowing desk lamp illuminating a closed laptop, a hot cup of tea steaming on the desk, deep shadows, safe and warm, highly detailed.",
-        "bgm_file": "rain_and_tea.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "emotional_resonance",
         "pain_point": "领导 PUA、消息炸群、界限被踩",
         "technique": "工作与自我价值解耦（内在价值论）",
@@ -363,7 +363,7 @@ THEMES = {
     "深夜食堂_疯狂吐槽": {
         "story_prompt": "场景是街角冒着热气的深夜关东煮小摊/面馆。以老朋友的口吻，用带着一点黑色幽默的语气，吐槽今天遇到的奇葩客户或离谱规定。在吐槽完之后，话锋变暖：'吃完这口热乎的，我们就把今天的倒霉事都翻篇吧。明天又是新的一天，先睡个好觉。'",
         "image_prompt": "A cinematic vertical view of a cozy glowing late-night food stall on a dark rainy street, steam rising from hot food, neon lights reflecting in puddles, cyberpunk/lofi chill vibe, photorealistic.",
-        "bgm_file": "lofi_noodle_stall.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "emotional_resonance",
         "pain_point": "今天太离谱，不吐一顿睡不着",
         "technique": "黑色幽默释放 + 热食身体安慰",
@@ -378,7 +378,7 @@ THEMES = {
     "失业缓冲期_职业空窗": {
         "story_prompt": "场景是一个裁员后或主动辞职的平常下午，你回到家，工位的杂物还散落在地上没有整理。用第二人称，温柔地告诉他：'空窗期不是失败，是换气口。简历可以明天再改，猎头的消息可以明天再回。现在，把简历放进抽屉，关上灯，允许自己什么都不做。你不是只有一个职位，你还是你。'引导慢呼吸，用物理动作（拉上窗帘/深呼吸）标记「今天结束了」。",
         "image_prompt": "A cinematic vertical view of a quiet afternoon apartment, a closed laptop on a desk with soft late-afternoon light, peaceful and grounded atmosphere, photorealistic.",
-        "bgm_file": "afternoon_quiet.mp3",
+        "bgm_file": "ocean_waves.wav",
         "category": "zeitgeist_2026",
         "pain_point": "裁员/空窗期的自我否定和未来不确定",
         "technique": "自我价值与职业角色解耦 + 物理锚点标记（简历入抽屉）",
@@ -389,7 +389,7 @@ THEMES = {
     "AI焦虑夜_数字排毒": {
         "story_prompt": "场景是关掉所有屏幕、断网一晚的卧室。用第二人称，承认听众的恐惧：'AI 每周都有新版本，你很怕被甩下。'然后引导：'但你现在握住的床单，感觉得到每一根棉线的纹理——这是任何 AI 都没办法替你经历的。你的身体、你的痛觉、你被风吹到脸上的感觉，就是你无法被复制的那部分。'引导听众把手机放远、深呼吸、回到身体。",
         "image_prompt": "A cinematic vertical view of a dark bedroom with a phone face-down on a nightstand, soft bedside lamp glow, hand resting on soft cotton sheets, photorealistic, grounding atmosphere.",
-        "bgm_file": "offline_night.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "zeitgeist_2026",
         "pain_point": "被 AI 取代焦虑 + 数字过载",
         "technique": "具身化（Embodiment）锚定：用触觉/本体感将注意力拉回身体",
@@ -400,7 +400,7 @@ THEMES = {
     "相亲过后_接纳单身": {
         "story_prompt": "场景是一次相亲后，你回到家，脱掉高跟鞋或皮鞋，瘫在沙发上。用第二人称（性别中立），替听众叹息：'被评判了一小时，被父母追问一整周，累得比上班还累。'然后温柔地说：'你不是在市场上的一件商品。你的价值不在于有没有合适的对象。今晚，把所有亲戚群静音，把自我评分卸下，一个人好好睡一觉——这是你欠自己的。'",
         "image_prompt": "A cinematic vertical view of a cozy living room at night, shoes kicked off by a sofa, soft warm lamp, empty but peaceful, photorealistic.",
-        "bgm_file": "home_alone_night.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "zeitgeist_2026",
         "pain_point": "相亲/催婚的被评判感、被物化感",
         "technique": "去商品化自我叙事 + 家庭期待与个人价值解耦",
@@ -411,7 +411,7 @@ THEMES = {
     "父母渐老_生命的重量": {
         "story_prompt": "场景是收到父母体检报告或家里电话后的深夜。第二人称温柔承认：'你今天第一次意识到，你的父母在变老——比你想象的快。'不回避恐惧，但引导听众回到可控的动作：'你不能让时间停下，但你可以明天打一个电话，可以周末回去吃一顿饭。今晚先睡好，这件事需要你有力气。'用节律呼吸让情绪沉淀。",
         "image_prompt": "A cinematic vertical view of an evening kitchen table, a half-drunk cup of tea, a phone face-down, soft window light, emotionally rich and grounding atmosphere, photorealistic.",
-        "bgm_file": "quiet_evening.mp3",
+        "bgm_file": "fireplace.wav",
         "category": "zeitgeist_2026",
         "pain_point": "父母健康问题/衰老带来的存在焦虑",
         "technique": "情绪承认 + 可控动作锚定（打电话/回家）",
@@ -422,7 +422,7 @@ THEMES = {
     "分手那晚_安静告别": {
         "story_prompt": "场景是分手当晚的卧室。不回避痛，用第二人称承认：'你心里有一个洞，现在不想被劝好。'引导听众不要急着屏蔽对方/删除聊天记录，而是把那些回忆轻轻放在一边：'不用今晚就翻篇，但今晚先合上它。像合上一本你看过很多遍、终于要放回书架的书。'缓慢呼吸，引导身体先于心先睡着。",
         "image_prompt": "A cinematic vertical view of a dim bedroom at night, a single lamp, a closed book on the nightstand, blurred photo frame face-down, photorealistic, emotionally heavy but peaceful.",
-        "bgm_file": "gentle_rain_room.mp3",
+        "bgm_file": "rain_ambient.wav",
         "category": "zeitgeist_2026",
         "pain_point": "刚分手/失恋的情绪溢出",
         "technique": "不回避情绪 + 象征性「合上」动作（不删、但先合上）",
