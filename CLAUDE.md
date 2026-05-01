@@ -1,104 +1,91 @@
-# CLAUDE.md
+## Team Operations — MiMo TTS 集成团队
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> 由 CCteam-creator 自动生成，可按需修改。
+> 此文件让 team-lead 的团队知识在上下文压缩后仍然保持。
 
-## Project Overview
+### Team-Lead 控制平面
 
-Bedtime Story Agent — an automated pipeline that batch-produces sleep/meditation audio content: AI-written scripts with prosody control, TTS narration with global rhythm curves, BGM mixing, and multi-platform publish metadata. Optionally generates scene images, AI video clips, and cover art.
+- team-lead = 主对话，不是生成的 agent
+- team-lead 负责用户对齐、范围控制、任务分解和阶段推进
+- team-lead 维护项目全局真相：主 `task_plan.md`、`decisions.md` 和此 `CLAUDE.md`
+- **禁用独立子智能体**：团队存在后，所有工作通过 SendMessage 交给队友
 
-## Running
+### 团队花名册
 
-```bash
-# Batch production (recommended) — 3 random themes, audio-only
-python3 batch.py --count 3 --audio-only
+| 名称 | 角色 | 模型 | 核心能力 |
+|------|------|------|---------|
+| backend-dev | 后端开发 | sonnet | MiMo TTS 集成 + fallback 链 + 风格标签 |
+| frontend-dev | 前端开发 | sonnet | GitHub Pages 站点适配 + 音频播放器 |
+| researcher-technical | 技术调研 | sonnet | prosody-MiMo 映射调研（只读） |
+| researcher-product | 产品/市场调研 | sonnet | 市场分析 + 变现路径（只读） |
+| reviewer | 代码审查 | sonnet | 安全/质量/性能/音频质量审查（只读） |
+| architect | 架构师 | sonnet | 代码库审计 + 重构方案设计 |
 
-# Batch with specific themes
-python3 batch.py --themes 午夜慢车 雨夜山中小屋 --audio-only
+### 任务下发协议
 
-# Full sweep of all 13 themes
-python3 batch.py --all --audio-only --words 600
+#### 消息送达时序（关键）
+`SendMessage` 只在接收方 idle 时送达——无法打断进行中的任务。初始派单必须前置上下文。
 
-# Interactive mode (legacy, includes visual pipeline)
-python3 main.py
+#### 大任务下发检查（4 项）
+1. 范围和目标 + 验收标准
+2. 文档提醒："请创建 `<前缀>-<任务名>/` 任务文件夹"
+3. 依赖说明：关键文件路径和行号
+4. 审查预期：完成后是否需要代码审查
 
-# Module-by-module debug
-python3 debug.py
+#### 任务文件夹前缀
+- backend-dev / frontend-dev: `task-<名称>/`
+- researcher-technical / researcher-product: `research-<主题>/`
+- reviewer: `review-<目标>/`
 
-# Standalone TTS synthesis
-python3 synthesize_once.py "要合成的文字"
-```
+### 通信速查
 
-## Testing
+| 操作 | 命令 |
+|------|------|
+| 给单个智能体分配任务 | `SendMessage(to: "<名称>", message: "...")` |
+| 广播给所有人 | `SendMessage(to: "*", message: "...")` |
+| dev 请求代码审查 | dev 直接联系 reviewer（不经过 team-lead） |
 
-```bash
-# All unit tests (28 tests, mock-based, no API keys needed)
-python3 -m unittest tests.test_cosyvoice_synthesize tests.test_prosody -v
+### 状态检查
 
-# Live TTS integration test (requires COSYVOICE_API_KEY in .env)
-RUN_COSYVOICE_LIVE=1 python3 -m unittest tests.test_cosyvoice_live -v
-```
+| 要检查什么 | 怎么做 |
+|-----------|--------|
+| 全局概览 | `TaskList` — 所有任务、负责人、阻塞情况一览 |
+| 快速扫描 | 并行读取各 agent 的 `progress.md` |
+| 深入了解 | 读 agent 的 `findings.md`（索引）→ 再看具体任务文件夹 |
+| 方向检查 | 读 `.plans/mimo-tts-integration/task_plan.md` |
 
-## Architecture
+读取顺序：**progress**（到哪了）→ **findings**（遇到什么）→ **task_plan**（目标是什么）
 
-### Core files
+### 文档索引
 
-- **`config.py`** — loads `.env`, exposes `API_CONFIG`, theme definitions (`THEMES`), prosody curve configs (`PROSODY_CURVES`), edge-tts voice mappings, and `TTS_SCRIPT_DIRECTIVE`.
-- **`engine.py`** — all production modules: story generation (3-pass LLM chain with quality evaluation), TTS (CosyVoice with auto-fallback to edge-tts), prosody-aware audio assembly, BGM mixing, image/video generation, cover art, SRT subtitle export, and publish metadata generation.
-- **`prosody.py`** — Prosody Curve Engine: maps script progress (0→1) to speed/volume/pause curves. Supports phase markers (`[阶段：引入/深入/尾声]`) for non-linear progress mapping, and multiplicative inline tags.
-- **`batch.py`** — batch production CLI. Integrates content dedup, quality evaluation, and metadata generation.
-- **`dedup.py`** — TF-IDF cosine similarity dedup against all existing outputs.
-- **`main.py`** — interactive CLI (legacy, full visual pipeline).
+| 文档 | 位置 | 维护者 |
+|------|------|--------|
+| 导航地图 | .plans/mimo-tts-integration/docs/index.md | team-lead |
+| 架构 | .plans/mimo-tts-integration/docs/architecture.md | team-lead, backend-dev |
+| API 契约 | .plans/mimo-tts-integration/docs/api-contracts.md | backend-dev |
+| 不变量 | .plans/mimo-tts-integration/docs/invariants.md | team-lead, reviewer |
 
-### Prosody Curve system
+### 审查维度
 
-The core differentiator. A piecewise-linear curve maps script progress to `{speed, volume, pause_gap}`:
-- Start: speed=1.0, vol=1.0, pause=0.3s (normal rhythm)
-- End: speed=0.55, vol=0.3, pause=2.0s (deep sleep induction)
+| # | 维度 | 权重 | STRONG 表现 | WEAK 表现 |
+|---|------|------|-----------|---------|
+| RD-1 | 音频质量 | 高 | 合成音频自然流畅，风格标签与 prosody curve 协同，无杂音/断句 | 音频生硬、风格标签失效、降级后质量断崖 |
+| RD-2 | 容错与降级 | 高 | MiMo 失败时无感降级，fallback 链清晰，错误日志充分 | 静默失败、降级后音频质量不可用 |
+| RD-3 | 代码可测试性 | 中 | TTS 模块可 mock、有集成测试、音色配置可离线验证 | 硬编码 API 调用、无法单测 |
+| RD-4 | 商业可行性 | 中 | 产品方向有市场调研支撑、变现路径清晰 | 功能做完了但不知道怎么卖 |
 
-Inline tags (`[慢速]`, `[轻声]`, `[极弱]`) are **multiplicative** on the curve base — the same tag produces stronger effect later in the script.
+### 核心协议
 
-Phase markers (`[阶段：引入]`, `[阶段：深入]`, `[阶段：尾声]`) snap curve progress to fixed anchors (0.0, 0.3, 0.7), allowing non-uniform progress distribution.
+| 协议 | 触发时机 | 操作 |
+|------|---------|------|
+| 3-Strike 上报 | 智能体报告 3 次失败 | 读其 progress.md，给新方向或重新分配 |
+| 代码审查 | 大功能/新模块完成 | dev 在 findings.md 写改动摘要，发给 reviewer |
+| 阶段推进 | 阶段完成 | 调研完：读 findings 更新主计划。开发完：等 reviewer [OK]/[WARN] |
+| Doc-Code Sync | API/架构变更 | 对应 docs/ 文件必须在同一任务中同步更新 |
+| CI 门禁 | 代码变更后 | 运行 `python3 scripts/run_ci.py`，PASS 后才能提交审查 |
 
-### TTS fallback chain
+### Known Pitfalls
 
-1. CosyVoice (model auto-routed by voice name via `_cosyvoice_model_for_voice`)
-2. On quota exhaustion (`AllocationQuota`): globally disables CosyVoice for the session
-3. edge-tts with theme-matched voice (`THEME_VOICE_MAP`) and prosody curve rate mapping
+> 当识别到反复出现的失败模式时追加到这里。
 
-### Story generation pipeline
-
-Three LLM passes + quality gate:
-1. Outline (心理学大纲, with phase markers)
-2. Draft expansion (口播稿, preserving all markup)
-3. Editor pass (anti-AI-tone checklist, sensory detail enforcement)
-4. Quality evaluation (4-dimension scoring, auto-rewrite if <70/100)
-
-### Batch production output per episode
-
-```
-outputs/Batch_YYYYMMDD_HHMMSS_主题名/
-├── story_draft.txt     # 剧本文稿
-├── voice.mp3           # 纯配音
-├── final_audio.mp3     # 成品（配音 + BGM 混音 + 响度归一化）
-├── subtitles.srt       # SRT 字幕
-├── metadata.json       # 发布元数据（标题/简介/标签，适配喜马拉雅/B站/小宇宙）
-├── scene_1.png         # 场景图（非 --audio-only）
-└── Cover_*.png         # 多平台封面（非 --audio-only）
-```
-
-## Key Constraints
-
-- **moviepy v1 only** — v2 removes `moviepy.editor`. Pinned in `requirements.txt`.
-- **Single DashScope API key** — `DASHSCOPE_API_KEY` in `.env` covers text (Qwen), TTS (CosyVoice), and video (Wan2.x). Falls back to edge-tts when TTS quota exhausted.
-- DashScope is domestic; `config.py` auto-clears proxy env vars and sets SSL cert from certifi.
-- Test stubs (`tests/stub_engine_imports.py`) mock heavy deps so unit tests run without moviepy/dashscope.
-
-## External Services
-
-| Service | Purpose | Config key |
-|---------|---------|------------|
-| Aliyun DashScope Qwen | Story text generation | `DASHSCOPE_API_KEY` |
-| Aliyun DashScope CosyVoice | TTS narration | same key |
-| Aliyun DashScope Wan2.x | Image-to-video | same key |
-| Pollinations (free) | Scene image + cover generation | — |
-| edge-tts (free) | TTS fallback, multiple Chinese voices | — |
+（初始为空）

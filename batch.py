@@ -32,6 +32,7 @@ from rich.table import Table
 from config import THEMES, API_CONFIG
 from dedup import ContentDedup
 import engine
+from theme_gen import ensure_themes, generate_themes
 
 console = Console()
 
@@ -131,6 +132,17 @@ async def produce_one(theme_name, output_dir, target_words, audio_only=False, de
 async def batch_main(args):
     _check_api_key()
 
+    # 仅生成主题模式
+    if args.gen_themes > 0:
+        new = generate_themes(args.gen_themes, focus=args.focus or "")
+        console.print(f"\n[bold green]已生成 {len(new)} 个新主题[/bold green]")
+        return
+
+    # 动态主题生成
+    if args.dynamic_themes:
+        target_count = args.count if not args.themes and not args.all else len(THEMES)
+        ensure_themes(target_count, focus=args.focus or "")
+
     # 确定要生产的主题列表
     if args.all:
         themes = list(THEMES.keys())
@@ -143,6 +155,9 @@ async def batch_main(args):
                 console.print(f"[yellow]主题 '{t}' 不在主题库中，跳过[/yellow]")
     else:
         all_themes = list(THEMES.keys())
+        if len(all_themes) < args.count and args.dynamic_themes:
+            generate_themes(args.count - len(all_themes), focus=args.focus or "")
+            all_themes = list(THEMES.keys())
         themes = random.sample(all_themes, min(args.count, len(all_themes)))
 
     # 系列模式：同一主题展开为多期
@@ -254,6 +269,10 @@ def main():
         "--all", action="store_true", help="遍历所有主题"
     )
     parser.add_argument(
+        "--gen-themes", type=int, default=0, metavar="N",
+        help="仅生成 N 个新主题（不生产内容），然后退出"
+    )
+    parser.add_argument(
         "--words", type=int, default=0,
         help="每期目标字数；不设则按主题 ideal_duration_min × 60 字/分钟自动推算（兜底 600）"
     )
@@ -261,7 +280,15 @@ def main():
         "--audio-only", action="store_true", help="纯音频模式（跳过图片/视频/封面）"
     )
     parser.add_argument(
-        "--parallel", type=int, default=1, help="并发生产数（默认 1，建议不超过 3）"
+        "--parallel", type=int, default=4, help="并发生产数（默认 4）"
+    )
+    parser.add_argument(
+        "--dynamic-themes", action="store_true",
+        help="主题库不足时自动生成新主题"
+    )
+    parser.add_argument(
+        "--focus", type=str, default="",
+        help="动态主题生成的聚焦方向（如 '职场'、'2026科技焦虑'）"
     )
     parser.add_argument(
         "--series", type=int, default=1, help="系列模式：每个主题生成 N 期不同内容（如 --series 5 生成第1-5夜）"

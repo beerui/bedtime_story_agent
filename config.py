@@ -62,6 +62,72 @@ API_CONFIG = {
     "tts_voice": os.getenv("TTS_VOICE", "longyue_v3").strip(),
     # [环境音：…] 在音轨上插入的静音秒数（后期可叠真实环境声）
     "tts_env_silence_seconds": float(os.getenv("TTS_ENV_SILENCE_SECONDS", "4.0")),
+    # MiMo TTS 开关（设为 "mimo" 启用 MiMo TTS 作为首选引擎）
+    "tts_engine": os.getenv("TTS_ENGINE", "cosyvoice").strip().lower(),
+}
+
+# ==========================================
+# 1b. MiMo 配置（TTS + LLM）
+# ==========================================
+MI_API_KEY = os.getenv("MI_API_KEY", "").strip()
+MI_BASE_URL = os.getenv("MI_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1").strip()
+MI_TEXT_MODEL = os.getenv("MI_TEXT_MODEL", "mimo-v2.5").strip()
+
+# 预置音色列表（mimo-v2.5-tts 模型）
+MIMO_PRESET_VOICES = {
+    "冰糖": "bingtang",
+    "茉莉": "moli",
+    "苏打": "suda",
+    "白桦": "baihua",
+}
+
+# 主题到 MiMo 音色的映射（未列出的主题使用 DEFAULT_VOICE）
+THEME_MIMO_VOICE_MAP = {
+    "末班地铁_卸下伪装": "苏打",
+    "天台吹风_人际抽离": "苏打",
+    "下班关机_反击上下级": "苏打",
+    "深夜食堂_疯狂吐槽": "白桦",
+    "深海独潜": "苏打",
+    "失业缓冲期_职业空窗": "苏打",
+    "AI焦虑夜_数字排毒": "苏打",
+    "相亲过后_接纳单身": "茉莉",
+    "父母渐老_生命的重量": "冰糖",
+    "分手那晚_安静告别": "苏打",
+}
+
+# 六段式风格模板（progress 区间 → user content 风格指令）
+MIMO_STYLE_TEMPLATES = [
+    {
+        "range": [0.0, 0.15],
+        "style": "自然平静的语调，正常语速，清晰温暖，像在轻声讲故事",
+    },
+    {
+        "range": [0.15, 0.30],
+        "style": "稍微放慢语速，声音温暖柔和，带有安抚感",
+    },
+    {
+        "range": [0.30, 0.50],
+        "style": "轻柔缓慢的低语，逐渐放松，声音变得柔和",
+    },
+    {
+        "range": [0.50, 0.70],
+        "style": "缓慢低沉的耳边呢喃，声音越来越轻，像在耳边说话",
+    },
+    {
+        "range": [0.70, 0.85],
+        "style": "极轻极慢的催眠低语，慵懒欲睡，几乎听不见的声音",
+    },
+    {
+        "range": [0.85, 1.00],
+        "style": "几乎听不见的气声，像在梦中呢喃，极度缓慢轻柔",
+    },
+]
+
+# 内联标记 → MiMo 音频标签映射
+MIMO_AUDIO_TAGS = {
+    "慢速": "缓慢",
+    "轻声": "轻声",
+    "极弱": "极轻低语",
 }
 # 视频总时长 (分钟)
 TOTAL_VIDEO_MINUTES = int(os.getenv("TOTAL_VIDEO_MINUTES", "15"))
@@ -393,6 +459,17 @@ THEME_CATEGORIES = {
     }
 }
 
+
+# 加载动态生成的自定义主题
+_custom_themes_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_themes.json")
+if os.path.exists(_custom_themes_path):
+    try:
+        import json as _json
+        with open(_custom_themes_path, "r", encoding="utf-8") as _f:
+            _custom = _json.load(_f)
+        THEMES.update(_custom)
+    except Exception:
+        pass
 
 CURRENT_THEME = "午夜慢车"
 

@@ -1,0 +1,87 @@
+{
+  "深夜会议幻听": {
+    "story_prompt": "你躺在床上，闭上眼，耳边却开始回放今天下午那场冗长的会议。领导的每一句点评、同事的每一次附和，甚至自己发言时略带颤抖的声音，都以‘幻听’的形式清晰循环。这不是真实的记忆，而是你大脑在应激下的‘录音回放’功能。我们将一起识别这些思维的‘后台噪音’，通过认知解离技术，把它们想象成隔壁房间传来的模糊电视声。你只需注意到它们，允许它们存在，然后温柔地将注意力锚定在呼吸的节奏上。你会发现，你有能力不被这些思维绑架，安然入睡。",
+    "image_prompt": "Cinematic vertical view, a person lying in bed in a dark, modern bedroom at night, eyes closed, faint soundwave patterns made of soft, glowing light emanating from their head and dissolving into the air, photorealistic, relaxing, moody lighting, sense of quiet release.",
+    "bgm_file": "",
+    "category": "clinical_technique",
+    "pain_point": "白天工作的对话、批评在脑中自动播放，无法关机，感觉思维被工作劫持。",
+    "technique": "认知解离",
+    "search_keywords": [
+      "职场焦虑",
+      "下班了还想着工作",
+      "脑子停不下来",
+      "职场幻听",
+      "睡前复盘"
+    ],
+    "ideal_duration_min": 15,
+    "emotional_target": "将思维与自我分离，获得内心的平静与观察者视角，从‘被思维控制’到‘观察思维’。"
+  },
+  "待办清单漂浮": {
+    "story_prompt": "你的大脑不是一片平静的湖，而是一张写满了明日、后天、甚至下周待办事项的便利贴墙。‘周报’、‘PPT终稿’、‘客户跟进’、‘体检预约’……这些事项在黑暗中发着光，压迫着你。今晚，我们将进行一场睡前‘心智整理’。想象你把每一张便利贴轻轻撕下，放在一叶小舟上。你不是要划走它们，而是允许它们随着思绪的溪流缓缓漂远。同时，用感官锚定技术，去感受被子的重量、枕头的温度、空气的流动。让身体的实感，带你从思维的漩涡中解脱。",
+    "image_prompt": "Cinematic vertical view, a serene river at twilight, small glowing boats carrying translucent sticky notes floating downstream under a starry sky, a person's silhouette watching peacefully from the bank, photorealistic, dreamlike, relaxing, soft focus.",
+    "bgm_file": "",
+    "category": "clinical_technique",
+    "pain_point": "睡觉时大脑仍在列清单，越想越清醒，感觉明天有很多事必须现在就想清楚。",
+    "technique": "催眠叙事 & 感官锚定",
+    "search_keywords": [
+      "睡前焦虑",
+      "任务清单",
+      "脑子很乱",
+      "如何清空大脑",
+      "压力管理"
+    ],
+    "ideal_duration_min": 12,
+    "emotional_target": "从‘必须立即解决’的紧绷感，过渡到‘已安排妥当，可以稍后处理’的释然与放下。"
+  },
+  "手机蓝光成瘾": {
+    "story_prompt": "你知道该睡了，但手指仍在屏幕上无意识地滑动，追逐着短视频、社交动态和碎片信息，仿佛在汲取一点虚假的陪伴和即时满足。这是一种‘数字反刍’，你并不享受，却无法停止。我们将一起进行‘数字戒断’的感官替代训练。闭上眼，想象手机屏幕的蓝光，像一层薄冰覆盖在你的眉心。现在，我们用一次深长的呼吸，化作一股暖流，将这层‘冰’从内部融化、驱散。同时，去聆听耳机里模拟的、老式座钟的滴答声——那是比手机通知更古老、更安抚的节律。",
+    "image_prompt": "Cinematic vertical view, a person sitting on the edge of a bed in the dark, a smartphone glowing cold blue on the nightstand, their eyes are closed and a soft, warm golden light emanates from their chest, contrasting with the blue, photorealistic, serene, digital detox theme.",
+    "bgm_file": "",
+    "category": "zeitgeist_2026",
+    "pain_point": "报复性熬夜，明明很累却放不下手机，陷入‘刷屏-愧疚-更累’的循环。",
+    "technique": "感官替代 & 渐进式肌肉放松（面部及眼部）",
+    "search_keywords": [
+      "手机上瘾",
+      "数字排毒",
+      "睡前玩手机",
+      "如何戒掉手机",
+      "熬夜自救"
+    ],
+    "ideal_duration_min": 10,
+    "emotional_target": "从对数字刺激的渴求，转向对内在安静与实体感官体验的满足。"
+  },
+  "周日傍晚预演": {
+    "story_prompt": "下午六点，夕阳刚沉。一种无形的沉重感开始弥漫，像一团灰色的雾。你甚至无法具体说出恐惧什么，但身体已经开始‘预演’周一的疲惫：早高峰的拥挤、堆积的邮件、紧绷的会议……这就是‘周日焦虑’，对即将到来的工作周期的生理性抗拒。我们将用接纳承诺疗法（ACT）中的‘观察性自我’技术来应对。把自己想象成一棵树，这些焦虑感就像掠过树梢的风，时而急促，时而轻柔。树干（你的真实自我）只是感受着风，而不是试图去阻止风。允许焦虑的天气存在，而不让它定义你的整个天空。",
+    "image_prompt": "Cinematic vertical view, a silhouette of a lone tree on a hill at dusk, dramatic cloudy sky with a mix of dark grey clouds and a final streak of sunset light, a sense of melancholy but also peace, photorealistic, cinematic lighting, vast landscape.",
+    "bgm_file": "",
+    "category": "zeitgeist_2026",
+    "pain_point": "每到周日晚上就莫名心慌、低落，对新一周感到本能的抗拒和无力。",
+    "technique": "接纳承诺疗法（ACT）- 观察性自我",
+    "search_keywords": [
+      "周日焦虑",
+      "上班族焦虑",
+      "如何克服周日恐惧",
+      "星期天晚上",
+      "职场倦怠"
+    ],
+    "ideal_duration_min": 14,
+    "emotional_target": "从‘抗拒和恐惧即将到来的压力’，转变为‘承认焦虑的存在，并与之和平共处’。"
+  },
+  "领导力倦怠": {
+    "story_prompt": "白天，你是团队的支柱，果断决策，情绪稳定，为每个人的情绪兜底。夜深人静，卸下所有角色，你却感到一种深层的疲惫和空洞——不是体力上的，而是情感能量被透支后的‘灰色’。这种‘共情疲劳’和‘决策倦怠’让你怀疑自己的热情。今晚，我们将进行一次‘领导力慈悲心冥想’。先承认这份付出的不易，然后想象一股温暖的、金色的滋养能量，从你的心轮流出，包裹你。这能量不是向外的，而是向内的，补给那个一直在给予的自己。你值得首先被自己温柔对待。",
+    "image_prompt": "Cinematic vertical view, a person in comfortable clothes sitting in a softly lit, minimalist home office, eyes closed, a golden, warm light glowing gently from their chest area, surrounding them like a protective bubble, photorealistic, introspective, healing atmosphere.",
+    "bgm_file": "",
+    "category": "emotional_resonance",
+    "pain_point": "作为管理者或项目负责人，长期情绪劳动导致深层疲惫，感觉热情被掏空。",
+    "technique": "慈悲心冥想 & 自我关怀",
+    "search_keywords": [
+      "领导力倦怠",
+      "情绪劳动",
+      "管理者压力",
+      "心累",
+      "职业耗竭"
+    ],
+    "ideal_duration_min": 16,
+    "emotional_target": "从‘自我耗竭’和‘孤独的承担感’，转向自我接纳与内在能量的回补。"
+  }
+}

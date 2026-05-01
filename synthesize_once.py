@@ -50,14 +50,15 @@ def main() -> None:
         print("错误: 请在 .env 中配置 COSYVOICE_API_KEY", file=sys.stderr)
         sys.exit(1)
 
-    from engine import _synthesize_cosyvoice
+    from tts_engine import CosyVoiceTTSEngine
 
     out_abs = os.path.abspath(args.output)
     odir = os.path.dirname(out_abs)
     if odir:
         os.makedirs(odir, exist_ok=True)
 
-    asyncio.run(_synthesize_cosyvoice(text, out_abs))
+    engine = CosyVoiceTTSEngine()
+    asyncio.run(engine.synthesize(text, out_abs))
     size = os.path.getsize(out_abs)
     print(f"已写入: {out_abs} ({size} bytes)")
 
