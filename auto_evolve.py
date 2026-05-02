@@ -49,10 +49,10 @@ def regenerate_episode(theme: str, outputs_dir: str, target_words: int = 900) ->
 
 def replace_old_version(theme: str, new_dir: str, outputs_dir: str):
     """用新版本替换旧版本。"""
-    # 找到旧版本目录
+    # 找到旧版本目录（包括 Batch_, EVOLVED_, REGEN_ 前缀）
     for d in os.listdir(outputs_dir):
-        if d.startswith('EVOLVED_') or d.startswith('REGEN_'):
-            continue
+        if d == os.path.basename(new_dir):
+            continue  # 跳过新版本目录
         old_theme = extract_theme(d)
         if old_theme == theme:
             old_path = os.path.join(outputs_dir, d)
