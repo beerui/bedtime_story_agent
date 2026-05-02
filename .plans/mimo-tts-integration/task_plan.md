@@ -42,7 +42,7 @@
 
 | # | 任务 | 负责人 | 状态 | 计划文件 |
 |---|------|--------|------|----------|
-| T1a | MiMo TTS API 集成 | backend-dev | **IN_PROGRESS** | backend-dev/task-mimo-integration/task_plan.md |
+| T1a | MiMo TTS API 集成 | backend-dev | **COMPLETE** | backend-dev/task-mimo-integration/task_plan.md |
 | T1b | TTS fallback 链重构 | backend-dev | pending (blocked by T1a) | backend-dev/task-fallback-chain/task_plan.md |
 | T1c | 多主播音色管理 | backend-dev | pending (blocked by T1a) | backend-dev/task-mimo-integration/task_plan.md |
 | T1d | 风格标签自动生成 | backend-dev | pending (blocked by T0a, T1a) | backend-dev/task-style-tags/task_plan.md |

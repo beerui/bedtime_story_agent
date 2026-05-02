@@ -128,6 +128,50 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(engine._resolve_voice(), tts_engine.EDGE_TTS_DEFAULT)
 
 
+class TestMiMoInlineTagConversion(unittest.IsolatedAsyncioTestCase):
+    """MiMoTTSEngine 内联标记 → 音频标签转换。"""
+
+    async def test_prosody_tag_prepends_audio_tag(self):
+        """prosody_tag='慢速' 应在文本前添加 (缓慢) 音频标签。"""
+        engine = tts_engine.MiMoTTSEngine()
+        captured_text = []
+
+        async def fake_synth(text, output_path, voice=None, style=None, model=None):
+            captured_text.append(text)
+            return True
+
+        with patch.object(engine, "is_available", return_value=True), \
+             patch("mimo_tts.synthesize_mimo", side_effect=lambda t, *a, **kw: captured_text.append(t) or True), \
+             patch("mimo_tts.resolve_style_for_progress", return_value="自然平静"):
+            await engine.synthesize("你好世界", "/tmp/out.wav", prosody_tag="慢速")
+
+        self.assertEqual(len(captured_text), 1)
+        self.assertTrue(captured_text[0].startswith("(缓慢)"))
+        self.assertIn("你好世界", captured_text[0])
+
+    async def test_no_prosody_tag_no_prefix(self):
+        """prosody_tag=None 时不应添加音频标签前缀。"""
+        engine = tts_engine.MiMoTTSEngine()
+        captured_text = []
+
+        with patch("mimo_tts.synthesize_mimo", side_effect=lambda t, *a, **kw: captured_text.append(t) or True), \
+             patch("mimo_tts.resolve_style_for_progress", return_value="自然平静"):
+            await engine.synthesize("你好世界", "/tmp/out.wav", prosody_tag=None)
+
+        self.assertEqual(captured_text[0], "你好世界")
+
+    async def test_unknown_prosody_tag_no_prefix(self):
+        """未知的 prosody_tag 不应添加音频标签前缀。"""
+        engine = tts_engine.MiMoTTSEngine()
+        captured_text = []
+
+        with patch("mimo_tts.synthesize_mimo", side_effect=lambda t, *a, **kw: captured_text.append(t) or True), \
+             patch("mimo_tts.resolve_style_for_progress", return_value="自然平静"):
+            await engine.synthesize("你好世界", "/tmp/out.wav", prosody_tag="未知标记")
+
+        self.assertEqual(captured_text[0], "你好世界")
+
+
 class TestCosyVoiceModelMapping(unittest.TestCase):
     """_cosyvoice_model_for_voice 音色→模型映射。"""
 

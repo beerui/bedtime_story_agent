@@ -42,8 +42,14 @@ class BaseTTSEngine(ABC):
         speed: float = 0.8,
         voice: str | None = None,
         progress: float = 0.0,
+        prosody_tag: str | None = None,
     ) -> bool:
-        """合成语音到文件。成功返回 True，失败返回 False（不抛异常）。"""
+        """合成语音到文件。成功返回 True，失败返回 False（不抛异常）。
+
+        Args:
+            prosody_tag: 内联韵律标记名（如 "慢速", "轻声", "极弱"），
+                         供 MiMo 引擎转换为音频标签。其他引擎忽略。
+        """
 
     @abstractmethod
     def is_available(self) -> bool:
@@ -74,11 +80,18 @@ class MiMoTTSEngine(BaseTTSEngine):
         speed: float = 0.8,
         voice: str | None = None,
         progress: float = 0.0,
+        prosody_tag: str | None = None,
     ) -> bool:
-        from mimo_tts import synthesize_mimo, resolve_style_for_progress
+        from mimo_tts import synthesize_mimo, resolve_style_for_progress, map_inline_tag_to_audio_tag
 
         voice = voice or self._resolve_voice()
         style = resolve_style_for_progress(progress)
+
+        # 将内联韵律标记转换为 MiMo 音频标签，前置到文本
+        audio_tag = map_inline_tag_to_audio_tag(prosody_tag) if prosody_tag else None
+        if audio_tag:
+            text = f"({audio_tag}){text}"
+
         return await asyncio.to_thread(
             synthesize_mimo, text, output_path, voice=voice, style=style
         )
@@ -115,6 +128,7 @@ class CosyVoiceTTSEngine(BaseTTSEngine):
         speed: float = 0.8,
         voice: str | None = None,
         progress: float = 0.0,
+        prosody_tag: str | None = None,
     ) -> bool:
         dashscope.api_key = API_CONFIG.get("cosyvoice_api_key", "")
         voice = voice or API_CONFIG.get("tts_voice", "longxiaochun")
@@ -158,6 +172,7 @@ class EdgeTTSEngine(BaseTTSEngine):
         speed: float = 0.8,
         voice: str | None = None,
         progress: float = 0.0,
+        prosody_tag: str | None = None,
     ) -> bool:
         voice = voice or self._resolve_voice()
         edge_rate = f"{int((speed - 1.0) * 100):+d}%"
@@ -212,6 +227,7 @@ class TTSManager:
         output_path: str,
         speed: float = 0.8,
         progress: float = 0.0,
+        prosody_tag: str | None = None,
     ) -> bool:
         """尝试所有可用引擎，成功返回 True，全部失败返回 False。"""
         for name in self._order:
@@ -220,7 +236,8 @@ class TTSManager:
                 continue
             try:
                 ok = await engine.synthesize(
-                    text, output_path, speed=speed, progress=progress
+                    text, output_path, speed=speed, progress=progress,
+                    prosody_tag=prosody_tag,
                 )
                 if ok:
                     return True
