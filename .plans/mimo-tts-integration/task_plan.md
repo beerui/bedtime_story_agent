@@ -1,9 +1,9 @@
 # MiMo-V2.5-TTS 集成 - 主计划
 
-> 状态: PLANNING
+> 状态: IN_PROGRESS
 > 创建: 2026-05-01
-> 更新: 2026-05-01
-> 团队: mimo-tts-integration (backend-dev, frontend-dev, researcher-technical, researcher-product, reviewer)
+> 更新: 2026-05-02
+> 团队: mimo-tts-integration (backend-dev, frontend-dev, researcher-technical, researcher-product, reviewer, architect)
 > 决策记录: .plans/mimo-tts-integration/decisions.md
 
 ---
@@ -29,20 +29,20 @@
 
 ## 3. 阶段概览
 
-### Phase 0: 调研（并行）
+### Phase 0: 调研（并行）— ✅ 完成
 
 | # | 任务 | 负责人 | 状态 | 计划文件 |
 |---|------|--------|------|----------|
-| T0a | prosody-MiMo 映射调研 | researcher-technical | pending | researcher-technical/research-prosody-mimo/task_plan.md |
-| T0b | 市场/变现调研 | researcher-product | pending | researcher-product/research-market/task_plan.md |
+| T0a | prosody-MiMo 映射调研 | researcher-technical | **COMPLETE** | researcher-technical/research-prosody-mimo/task_plan.md |
+| T0b | 市场/变现调研 | researcher-product | **COMPLETE** | researcher-product/research-market/task_plan.md |
 | Ta1 | 代码库审计 | architect | **COMPLETE** | architect/task-codebase-audit/task_plan.md |
-| Ta2 | 重构方案 | architect | pending (blocked by Ta1) | architect/task-refactor-plan/task_plan.md |
+| Ta2 | 重构方案 | architect | **COMPLETE** | architect/task-refactor-plan/task_plan.md |
 
-### Phase 1: 核心开发（依赖 T0a）
+### Phase 1: 核心开发（依赖 T0a）— ⏳ 进行中
 
 | # | 任务 | 负责人 | 状态 | 计划文件 |
 |---|------|--------|------|----------|
-| T1a | MiMo TTS API 集成 | backend-dev | pending (blocked by T0a) | backend-dev/task-mimo-integration/task_plan.md |
+| T1a | MiMo TTS API 集成 | backend-dev | **IN_PROGRESS** | backend-dev/task-mimo-integration/task_plan.md |
 | T1b | TTS fallback 链重构 | backend-dev | pending (blocked by T1a) | backend-dev/task-fallback-chain/task_plan.md |
 | T1c | 多主播音色管理 | backend-dev | pending (blocked by T1a) | backend-dev/task-mimo-integration/task_plan.md |
 | T1d | 风格标签自动生成 | backend-dev | pending (blocked by T0a, T1a) | backend-dev/task-style-tags/task_plan.md |
@@ -59,8 +59,20 @@
 
 ## 4. 当前阶段
 
-Phase 0 — 调研阶段。两个 researcher 并行启动：
-- researcher-technical: prosody curve 与 MiMo 风格标签映射
-- researcher-product: 睡前音频市场分析 + 变现路径
+Phase 1 — 核心开发阶段。
 
-Phase 1 等待 T0a 结论后启动。
+### 已完成（Session 4-5）
+- ✅ engine.py 拆分（981行 → 5 个模块 + 1 个 facade）
+- ✅ publish.py 拆分（4805行 → 8 个模块 + 1 个入口）
+- ✅ MiMo LLM 文本生成集成（story_gen/metadata_gen/bgm 已接入 fallback）
+
+### 当前任务（T1a）
+- ⏳ MiMo TTS API 集成
+- 目标：提取 TTS 抽象层 + 创建 mimo_tts.py + 接入 TTSManager
+- 预计工作量：~13.5h
+- 负责人：backend-dev
+
+### 下一步
+- T1b: TTS fallback 链重构（MiMo → CosyVoice → edge-tts）
+- T1c: 多主播音色管理（每个主题绑定 Voice Design 描述）
+- T1d: 风格标签自动生成（LLM 为每段脚本生成 MiMo 风格标签）
