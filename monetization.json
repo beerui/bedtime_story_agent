@@ -59,14 +59,14 @@
     "wechat_mp": "",
     "xiaohongshu": "",
     "bilibili": "",
-    "contact_email": "hello@你的域名.com"
+    "contact_email": "motou2017@163.com"
   },
   "analytics": {
     "_comment": "三选一（或都留空不注入）。Plausible/Umami 隐私友好，GA4 功能最强但需要 cookie 条款",
     "plausible_domain": "",
     "umami_script_url": "",
     "umami_website_id": "",
-    "google_analytics_id": ""
+    "google_analytics_id": "G-WDNBNE1VKR"
   },
   "newsletter": {
     "_comment": "邮件订阅：任何接收 HTML form POST 的服务都行。常见：FormSubmit.co（免注册，POST 到 https://formsubmit.co/你@邮箱.com 会转发到邮箱）、FormSubmit 别名（https://formsubmit.co/el/xxxxxx 隐藏邮箱）、Buttondown（https://buttondown.email/api/emails/embed-subscribe/你的用户名）、Formspark（https://submit-form.com/FORM_ID）、Formspree（https://formspree.io/f/FORM_ID）。留空或 enabled=false 则表单不渲染",
