@@ -59,19 +59,19 @@ class TestTTSManagerFallback(unittest.IsolatedAsyncioTestCase):
     async def test_all_fail_returns_false(self):
         """所有引擎失败时返回 False。"""
         manager = tts_engine.TTSManager()
-        for eng in manager._engines.values():
-            patch.object(eng, "is_available", return_value=True).__enter__()
-            patch.object(eng, "synthesize", new_callable=AsyncMock, return_value=False).__enter__()
+        mimo = manager._engines["mimo"]
+        cos = manager._engines["cosyvoice"]
+        edge = manager._engines["edge-tts"]
 
-        with tempfile.TemporaryDirectory() as td:
-            ok = await manager.synthesize("你好", os.path.join(td, "out.mp3"))
+        with patch.object(mimo, "is_available", return_value=True), \
+             patch.object(mimo, "synthesize", new_callable=AsyncMock, return_value=False), \
+             patch.object(cos, "is_available", return_value=True), \
+             patch.object(cos, "synthesize", new_callable=AsyncMock, return_value=False), \
+             patch.object(edge, "is_available", return_value=True), \
+             patch.object(edge, "synthesize", new_callable=AsyncMock, return_value=False):
 
-        # cleanup patches
-        for eng in manager._engines.values():
-            try:
-                patch.stopall()
-            except Exception:
-                pass
+            with tempfile.TemporaryDirectory() as td:
+                ok = await manager.synthesize("你好", os.path.join(td, "out.mp3"))
 
         self.assertFalse(ok)
 

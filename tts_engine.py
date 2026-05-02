@@ -73,6 +73,11 @@ class MiMoTTSEngine(BaseTTSEngine):
         engine = API_CONFIG.get("tts_engine", "cosyvoice")
         return engine == "mimo"
 
+    def disable(self, reason: str = ""):
+        """禁用 MiMo 引擎（额度耗尽等场景），与 CosyVoiceTTSEngine 对称。"""
+        self._disabled = True
+        logger.warning("MiMo TTS 已禁用: %s", reason)
+
     async def synthesize(
         self,
         text: str,
@@ -93,7 +98,7 @@ class MiMoTTSEngine(BaseTTSEngine):
             text = f"({audio_tag}){text}"
 
         return await asyncio.to_thread(
-            synthesize_mimo, text, output_path, voice=voice, style=style
+            synthesize_mimo, text, output_path, voice=voice, style=style, speed=speed
         )
 
     def _resolve_voice(self) -> str:

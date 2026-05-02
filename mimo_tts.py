@@ -121,6 +121,7 @@ def synthesize_mimo(
     voice: str | None = None,
     style: str | None = None,
     model: str | None = None,
+    speed: float | None = None,
 ) -> bool:
     """同步入口：调用 MiMo TTS API 合成语音。
 
@@ -130,10 +131,14 @@ def synthesize_mimo(
         voice: 预置音色 ID 或 Voice Design 描述
         style: 风格标签（如 "温柔 慵懒"）或导演模式指令
         model: 指定模型，None 则自动选择
+        speed: 语速参数（MiMo API 不支持，传入时会记录日志提示）
 
     Returns:
         True 成功，False 失败（不抛异常）
     """
+    if speed is not None:
+        logger.info("MiMo TTS 不支持 speed 参数，已忽略 (speed=%.2f)", speed)
+
     if not text or not text.strip():
         logger.error("synthesize_mimo: text 为空")
         return False
@@ -147,7 +152,7 @@ def synthesize_mimo(
     kwargs = _build_request_kwargs(resolved_model, messages, voice)
 
     try:
-        response = client.chat.completions.create(**kwargs)
+        response = client.chat.completions.create(timeout=30, **kwargs)
 
         # 从响应中提取 base64 音频数据
         audio_data = None
@@ -188,10 +193,11 @@ async def synthesize_mimo_async(
     voice: str | None = None,
     style: str | None = None,
     model: str | None = None,
+    speed: float | None = None,
 ) -> bool:
     """异步入口：包装同步调用，避免阻塞事件循环。"""
     return await asyncio.to_thread(
-        synthesize_mimo, text, output_path, voice, style, model
+        synthesize_mimo, text, output_path, voice, style, model, speed
     )
 
 
